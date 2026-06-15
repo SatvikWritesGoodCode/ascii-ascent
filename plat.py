@@ -158,11 +158,20 @@ class AliveCode(Enum):
     ALIVE = 1
     WON = 2
 
-    @property
-    def normal(self):
-        return self == AliveCode.ALIVE
+    def is_alive(self):
 
-    def __bool__(self):
+        """Returns whether the player is alive
+        (self == AliveCode.ALIVE). Is false
+        when the player has won or died."""
+
+        return self.value == 1
+
+    def is_won(self):
+
+        """Returns whether the player has won
+        (self == AliveCode.WON). Is false
+        when the player is alive or dead."""
+
         return self.value == 2
 
 class Asterisks(set):
@@ -595,7 +604,7 @@ class WinDeathChecker:
         stub = "Won [+]"
 
         # Coins were collected.
-        if (self.p.frame.alive and self.p.coin_counter and
+        if (self.p.frame.alive.is_won() and self.p.coin_counter and
                 self.p.coin_counter.full):
 
             res = Result.WON | Result.COIN
@@ -603,7 +612,7 @@ class WinDeathChecker:
             return self.add_to_stub(res, stub)
 
         # Coin was not collected, but still alive.
-        elif self.p.frame.alive:
+        elif self.p.frame.alive.is_won():
 
             res = Result.WON
             return self.add_to_stub(res, stub)
@@ -1085,7 +1094,7 @@ class Platformer:
         current_chr = self.maps.game[new]
         chr_below = self.maps.game[below]
 
-        if not frame.alive.normal:
+        if not frame.alive.is_alive():
             return frame
 
         self._check_item_collection(new)
@@ -1728,7 +1737,7 @@ class Platformer:
 
         frame = ExecutionFrame(AliveCode.ALIVE, self.frame.coords)
 
-        if not frame.alive.normal:
+        if not frame.alive.is_alive():
             return frame
 
         if self._check_item_collection(frame.coords):
@@ -1736,7 +1745,7 @@ class Platformer:
 
         frame = self._new_position_helper(move, self.frame.coords.copy())
 
-        if not frame.alive.normal:
+        if not frame.alive.is_alive():
             return frame
 
         if self._check_item_collection(frame.coords):
@@ -1749,7 +1758,7 @@ class Platformer:
 
         frame = self._top_level_apply_gravity(frame)
 
-        if not frame.alive.normal:
+        if not frame.alive.is_alive():
             return frame
 
         if self._check_item_collection(frame.coords):
@@ -1788,7 +1797,7 @@ class Platformer:
 
         frame = self._new_position(move)
 
-        if not frame.alive.normal:
+        if not frame.alive.is_alive():
             return frame
 
         # --- Initial new position <end> ---
@@ -1802,12 +1811,12 @@ class Platformer:
 
         frame = self._progress_platforms(frame)
 
-        if not frame.alive.normal:
+        if not frame.alive.is_alive():
             return frame
 
         frame = self._progress_countdown(frame)
 
-        if not frame.alive.normal:
+        if not frame.alive.is_alive():
             return frame
 
         # --- Map Updates <end> ---
