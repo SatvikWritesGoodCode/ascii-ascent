@@ -355,10 +355,13 @@ class InfoData:
                 self.bullets,
                 width=Constants.X_LEN,
                 newline=False
-            ),
-            self.free_text,
-            "Press [Enter] to continue. "
+            )
         ]
+
+        if self.free_text:
+            string_list.append(self.free_text)
+
+        string_list.append("Press [Enter] to continue. ")
 
         return "\n".join(string_list)
 
@@ -489,7 +492,6 @@ supported for hotkeys yet.)"""
         clear()
 
         info_data = getattr(InfoUtils, name.strip().upper())
-
         stdout.write(str(info_data))
 
         IOUtils.input()
