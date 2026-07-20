@@ -1343,6 +1343,9 @@ class MainMode:
             self._run()
         except (Exception, KeyboardInterrupt):
 
+            # __import__("traceback").print_exc()
+            # input()
+
             save_str = self.data.as_save_str()
             EnterExitUtils.exit_scene(
                 f"Your game ended unexpectedly. Your save string is below:\n{save_str}"
