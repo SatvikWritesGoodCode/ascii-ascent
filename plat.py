@@ -256,21 +256,35 @@ class ExecutionFrame:
     def freeze(self):
         self.coords = self.coords.as_frozen()
 
-@dataclass(slots=True)
     def normalize(self):
         self.coords = self.coords.as_normal()
 
+@dataclass
 class CoinCounter:
 
+    """A class that tracks the total number of coins
+    in a map, as well as the amount the player
+    has collected. The update method adds 1
+    to the counter if there are still coins left.
+    The full property returns whether the player
+    has collected all coins."""
+
+    __slots__ = ("total", "collected")
+
     total: int
-    collected: int = 0
+
+    def __post_init__(self):
+
+        self.collected: int = 0
 
     def __str__(self):
 
         return f"{self.collected}/{self.total}"
 
     def update(self):
-        self.collected += 1
+
+        if not self.full:
+            self.collected += 1
 
     @property
     def full(self):
