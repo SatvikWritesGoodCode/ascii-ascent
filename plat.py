@@ -420,53 +420,10 @@ class CountdownGenerator:
 
         return self
 
-class Locks:
-
-    __slots__ = ("_cache", "open", "linked_maps")
-
-    """A class that acts as a lock manager,
-    tracking which coordinates should be opened
-    and which should not be."""
-
-    def __init__(self, maps: PlatformerMap):
-
-        cache = {i: set() for i in LOCKS}
-
-        for y, row in enumerate(maps.game):
-            for x, char in enumerate(row):
-
-                if char in LOCKS:
-                    cache[char].add(FrozenC(x, y))
-
-        # All locks
-        self._cache = cache
-
-        # Locks that are currently opened.
-        self.open = {i: set() for i in LOCKS}
-
-        self.linked_maps = maps
-
-    def edit(self, lock_char: str, condition: bool):
-
-        """Subroutine for replacing keys, based on:
-        - condition: Boolean condition for the lock to be opened.
-        - lock_char: Character representation of lock to be searched for /
-          reinforced.
-          """
-
-        for coord in self._cache[lock_char]:
-
-            if condition:
-                self.linked_maps.both[coord] = '`'
-                self.open[lock_char].add(coord)
-
-            elif coord in self.open[lock_char]:
-
-                # reinforce.
-                self.linked_maps.both[coord] = lock_char
-                self.open[lock_char].remove(coord)
-
 class Portals:
+
+    """A class containing the coordinates of linked-up
+    teleportation portals."""
 
     __slots__ = ("pairs",)
 
@@ -488,15 +445,53 @@ class Portals:
 
     def __getitem__(self, coords: Coordinates) -> list[FrozenC]:
 
-        for i in self.pairs:
+        """From the coordinate of a portal, retrieves the coordinates
+        of all other portals that link to it. If the coordinate
+        is not of a portal, then a KeyError is raised."""
 
-            # The variable i is a frozenset
+        for coord_set in self.pairs:
 
-            if coords.as_frozen() in i:
-                return list(self.pairs[i])
+            if coords.as_frozen() in coord_set:
+                return list(self.pairs[coord_set])
 
         else:
             raise KeyError(f"{coords!r} not found.")
+
+class Locks:
+
+    """A class that acts as a lock manager,
+    tracking which coordinates should be opened
+    and which should not be."""
+
+    __slots__ = ("locks", "open_locks")
+
+    def __init__(self, default_map: GameMap):
+
+        # All locks
+        self.locks = {i: default_map.find(i) for i in LOCKS}
+
+        # Locks that are currently opened.
+        self.open_locks = set()
+
+    def __getitem__(self, lock_char: str) -> set[FrozenC]:
+
+        return self.locks[lock_char]
+
+    def is_open(self, lock_char: str) -> bool:
+
+        return lock_char in self.open_locks
+
+    def edit(self, lock_char: str, open: bool):
+
+        """Subroutine for replacing locks, based on:
+        - open: Boolean condition for the lock to be opened.
+        - lock_char: Character representation of the lock to be edited.
+        """
+
+        if open:
+            self.open_locks.add(lock_char)
+        else:
+            self.open_locks.discard(lock_char)
 
 @dataclass(slots=True)
 class MovementParameters:
