@@ -1533,7 +1533,7 @@ class Platformer:
         g1 = "V" if self.down else "^"
         g2 = "^" if self.down else "V"
 
-        apply_grav = True
+        apply_grav = Gravity.APPLY
 
         g = self.gravity if coord_dunder in "|V^" else -self.gravity
 
@@ -1597,7 +1597,7 @@ class Platformer:
         frame = self._check_platform_collision(frame)
         self.maps.update_platforms()
 
-        return frame, Gravity.APPLY
+        return frame
 
     def _progress_locks(self, *, only_not=False):
 
