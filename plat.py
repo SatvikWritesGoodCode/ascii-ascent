@@ -172,6 +172,16 @@ class AliveCode(Enum):
 
         return self.value == 2
 
+class Gravity(Enum):
+
+    """Used with the _gravity_affected decorator.
+    Signals whether to apply gravity after the function returns
+    or whether to skip. This allows for precise control
+    of how the _gravity_affected decorator acts."""
+
+    APPLY = auto()
+    SKIP = auto()
+
 class Asterisks(set):
 
     """A set object used in the Platformer class, which tracks
@@ -251,7 +261,6 @@ class ExecutionFrame:
 
     alive: AliveCode
     coords: Coordinates
-    apply_grav: bool = True
 
     def freeze(self):
         self.coords = self.coords.as_frozen()
@@ -507,8 +516,9 @@ class PlatformerMap:
 
         self.both = MultiMap(game_map.copy(), game_map.copy())
 
-        self.countdown_gen = CountdownGenerator(game_map.find(COUNTDOWN))
-        self.platform_gen = PlatformGenerator(game_map, game_map.find(ARROWS))
+        self.countdown_gen = CountdownGenerator(game_map)
+        self.platform_gen = PlatformGenerator(game_map)
+        self.locks = Locks(game_map)
 
     @property
     def game(self):
@@ -1452,21 +1462,36 @@ class Platformer:
 
                 r = func(self, *args, **kwargs)
 
-                if not isinstance(r, ExecutionFrame):
+                if not isinstance(r, tuple):
+                    raise TypeError(f"Function {func.__name__} did not return a tuple.")
+
+                if len(r) != 2:
+                    raise ValueError(f"Function {func.__name__} did not return a tuple of length 2.")
+
+                frame, apply_grav = r
+
+                if not isinstance(frame, ExecutionFrame):
                     raise ValueError(
-                        f"Function {func.__name__} did not return execution frame.")
+                        f"The first object returned by {func.__name__} is not an ExecutionFrame object."
+                    )
 
-                # if needed bool
-                if isinstance(r.apply_grav, bool) and r.apply_grav:
+                if not isinstance(apply_grav, Gravity):
+                    raise ValueError(
+                        f"The second object returned by {func.__name__} is not a Gravity object."
+                    )
 
-                    grav = (self._top_level_apply_gravity
-                            if top_level else self._apply_gravity)
+                if apply_grav == Gravity.APPLY:
 
-                    r = grav(r)
+                    grav = (
+                        self._top_level_apply_gravity
+                        if top_level else self._apply_gravity
+                    )
 
-                r.coords = r.coords.as_normal()
+                    frame = grav(frame)
 
-                return r
+                frame.normalize()
+
+                return frame
 
             return wrapper
 
@@ -1481,7 +1506,7 @@ class Platformer:
 
             alive = AliveCode.DEAD
 
-        return ExecutionFrame(alive, frame.coords, True)
+        return ExecutionFrame(alive, frame.coords), Gravity.APPLY
 
     def _check_platform_collision(self, frame):
 
@@ -1508,7 +1533,7 @@ class Platformer:
         g1 = "V" if self.down else "^"
         g2 = "^" if self.down else "V"
 
-        gravity_needed = True
+        apply_grav = True
 
         g = self.gravity if coord_dunder in "|V^" else -self.gravity
 
@@ -1550,9 +1575,9 @@ class Platformer:
                     coords.y += self.gravity
 
             case _:
-                gravity_needed = False
+                apply_grav = Gravity.SKIP
 
-        return ExecutionFrame(dead, coords, gravity_needed)
+        return ExecutionFrame(dead, coords), apply_grav
 
     def _progress_countdown(self, frame):
 
@@ -1680,7 +1705,7 @@ class Platformer:
                     frame = self._new_position_helper(launch_move, coords)
                     self.move = move
 
-                    return frame
+                    return frame, Gravity.APPLY
 
             # Bound coords
             launch_coords.x = max(min(launch_coords.x, upper_x), lower_x)
@@ -1695,13 +1720,13 @@ class Platformer:
         try:
             possible_coords = self.portals[frame.coords]
         except KeyError:
-            return ExecutionFrame(AliveCode.ALIVE, frame.coords)
+            return ExecutionFrame(AliveCode.ALIVE, frame.coords), Gravity.APPLY
 
         num_found = len(possible_coords)
 
         if num_found == 1:
             return ExecutionFrame(AliveCode.ALIVE,
-                                  possible_coords[0].as_normal())
+                                  possible_coords[0].as_normal()), Gravity.APPLY
         else:
 
             possible_coords_x = sorted(possible_coords,
@@ -1749,7 +1774,7 @@ class Platformer:
                         self.maps.both.patch(frame.coords)
                         clear()
                         self.hidden = False
-                        return ExecutionFrame(AliveCode.ALIVE, c)
+                        return ExecutionFrame(AliveCode.ALIVE, c), Gravity.APPLY
 
                 current_ind_x %= num_found
                 current_ind_y %= num_found
@@ -1798,7 +1823,7 @@ class Platformer:
     def _flip_gravity(self, frame, char: Literal["+", "="], func=None):
 
         self.down = False if char == "+" else True
-        return frame
+        return frame, Gravity.APPLY
 
     def _progress_helper(self, move: str) -> ExecutionFrame:
 
