@@ -220,20 +220,19 @@ class Asterisks(set):
 @dataclass(slots=True)
 class Keys:
 
+    """Tracks whether the lowercase and uppercase keys have
+    been collected."""
+
     k: bool = False
     K: bool = False
 
     def get_char(self, char: Literal["k", "K"]):
 
-        return self.k if char == "k" else self.K
+        return getattr(self, char)
 
     def set_char(self, char: Literal["k", "K"], collected: bool):
 
-        match char:
-            case "k":
-                self.k = collected
-            case "K":
-                self.K = collected
+        setattr(self, char, collected)
 
     def __iter__(self):
 
