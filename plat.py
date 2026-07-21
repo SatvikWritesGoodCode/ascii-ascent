@@ -1869,10 +1869,6 @@ class Platformer:
 
         # --- Map Updates <end> ---
 
-        # --- Teleport ---
-
-        # --- Teleport <end> ---
-
         self._check_item_collection(frame.coords)
         frame, _ = self._affected_frame(frame.coords)
 
