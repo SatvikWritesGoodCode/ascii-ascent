@@ -486,6 +486,12 @@ class Locks:
 @dataclass(slots=True)
 class MovementParameters:
 
+    """A class that defines how a player moves in-game.
+    FAST_X is how far a player moves when they jump.
+    Y is the height a player reaches when they jump.
+    Both variables are set on default to the FAST_X
+    and Y constants at the top of the file."""
+
     FAST_X: int = FAST_X
     Y: int = Y
 
