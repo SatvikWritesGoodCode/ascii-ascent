@@ -321,24 +321,21 @@ class Cells:
 
 class PlatformGenerator:
 
-    __slots__ = ("game_map", "last_value", "default")
+    """A generator class that, given an initial game map,
+    calculates the next position of the moving arrow platforms
+    and their directions. Additionally, after next() is called,
+    the generator object saves the result as self.last_value."""
 
-    def __init__(self, game_map: GameMap=None, initial_coords: Coords=None):
+    __slots__ = ("game_map", "last_value")
 
-        if (game_map is None) + (initial_coords is None) == 1:
-            raise TypeError(
-                "PlatformGenerator takes 0 or 2 arguments, 1 was given")
+    def __init__(self, game_map: GameMap):
 
         self.game_map = game_map
-        self.last_value = set() if initial_coords is None else initial_coords
-        self.default = game_map is None and initial_coords is None
+        self.last_value = Cells.from_map(game_map, ARROWS)
 
-    def __next__(self) -> Coords:
+    def __next__(self) -> Cells:
 
-        result = set()
-
-        if self.default:
-            return result
+        result = Cells()
 
         for coord, direction in self.last_value:
             x, y = coord
@@ -371,7 +368,7 @@ class PlatformGenerator:
                     y -= 1
                     new_dir = "V"
 
-            result.add((FrozenC(x, y), new_dir))
+            result.add(Cell(FrozenC(x, y), new_dir))
 
         self.last_value = result
 
