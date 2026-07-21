@@ -182,7 +182,7 @@ class Asterisks(set):
 
     def __repr__(self):
 
-        return f"Asterisks({','.join(str(i) for i in self)})"
+        return f"Asterisks({', '.join(str(i) for i in self)})"
 
     def __contains__(self, coord: Coordinates) -> bool:
 
@@ -197,6 +197,8 @@ class Asterisks(set):
 
     def add(self, coord: Coordinates) -> None:
 
+        """Allows for adding normal coordinates."""
+
         if not isinstance(coord, Coordinates):
             raise ValueError(f"{coord} is not a coordinate.")
 
@@ -204,38 +206,11 @@ class Asterisks(set):
 
         super().add(coord)
 
-    def discard(self, coord: Coordinates) -> None:
-
-        if not isinstance(coord, Coordinates):
-            raise ValueError(f"{coord} is not a coordinate.")
-
-        coord = coord.as_frozen()
-
-        super().discard(coord)
-
-    def update(self, other: Asterisks) -> None:
-
-        other_as_list = []
-        for coord in other:
-            if not isinstance(coord, Coordinates):
-                raise ValueError(f"{coord} is not a coordinate.")
-            other_as_list.append(coord.as_frozen())
-
-        super().update(other_as_list)
-
-    def remove(self, coord: Coordinates) -> None:
-
-        if not isinstance(coord, Coordinates):
-            raise ValueError(f"{coord} is not a coordinate.")
-
-        coord = coord.as_frozen()
-
-        super().remove(coord)
-
     def populate(self, platformer: Platformer, frame: ExecutionFrame):
 
-        """Adds any asterisks / disappearing blocks
-        to the asterisk set."""
+        """Uses a Platformer object as well as the current coordinates of the
+        player to determine if the player is currently above an asterisk
+        block. If so, the coordinate is added to the set to be deleted."""
 
         below = frame.coords.adj("s", platformer.gravity).as_frozen()
 
