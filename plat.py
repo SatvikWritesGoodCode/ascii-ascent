@@ -1615,7 +1615,7 @@ class Platformer:
         frame = self._check_platform_collision(frame)
         self.maps.update_platforms()
 
-        return frame
+        return frame, Gravity.APPLY
 
     def _progress_locks(self, *, only_not=False):
 
