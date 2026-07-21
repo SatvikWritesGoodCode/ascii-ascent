@@ -253,7 +253,13 @@ class ExecutionFrame:
     coords: Coordinates
     apply_grav: bool = True
 
+    def freeze(self):
+        self.coords = self.coords.as_frozen()
+
 @dataclass(slots=True)
+    def normalize(self):
+        self.coords = self.coords.as_normal()
+
 class CoinCounter:
 
     total: int
