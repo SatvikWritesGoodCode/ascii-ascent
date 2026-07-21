@@ -514,6 +514,16 @@ class MovementParameters:
 
 class PlatformerMap:
 
+    """A class that provides an interface with two layered maps:
+    a game map (with the character) and a default map (no character). In
+    fact, at any time, the game map is just the default map with the
+    player's icon. The default map serves as context or as a live
+    background which the icon is placed on top of. This is
+    useful when the icon is cleared and moved every tick.
+
+    Additionally, the class contains in-built control for
+    countdown blocks, platforms, locks, and asterisks."""
+
     __slots__ = ("both", "countdown_gen", "platform_gen")
 
     def __init__(self, game_map: GameMap):
@@ -522,17 +532,26 @@ class PlatformerMap:
 
         self.countdown_gen = CountdownGenerator(game_map)
         self.platform_gen = PlatformGenerator(game_map)
-        self.locks = Locks(game_map)
 
     @property
     def game(self):
-
         return self.both.game_map
 
     @property
     def default(self):
-
         return self.both.default_map
+
+    def clear(self, coord: Coordinates):
+
+        self.both[coord] = " "
+
+    def update_locks(self, locks: Locks):
+
+        for lock in locks:
+            coords, open = locks[lock], locks.is_open(lock)
+
+            for coord in coords:
+                self.both[coord] = "`" if open else lock
 
     def update_countdown_blocks(self):
 
@@ -564,14 +583,8 @@ class PlatformerMap:
 
     def clear_asterisks(self, stepped_on: Asterisks):
 
-        """Clears the stepped on set."""
-
         for coord in stepped_on:
-            self.clear_coord(coord)
-
-    def clear_coord(self, coord: Coordinates):
-
-        self.both[coord] = " "
+            self.clear(coord)
 
 @dataclass(frozen=True)
 class WinCondition:
@@ -818,7 +831,7 @@ class Renderer:
         else:
             stdout.write(str(gmap))
 
-        if self.platformer.debug:
+        if True: #self.platformer.debug:
 
             dmap = self.platformer.maps.default
 
