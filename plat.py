@@ -1953,7 +1953,7 @@ class Platformer:
 
     def _clear_items(self):
 
-        """Clears the coins as well as the character."""
+        """Clears the coins, player icon, and asterisks"""
 
         self._clear_collectible()
         self.maps.clear_asterisks(self.stepped_on)
