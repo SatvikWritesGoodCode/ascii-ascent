@@ -955,11 +955,11 @@ class Platformer:
         self.debug = debug
         self.meta = meta
 
-        self.coin_counter = CoinCounter(total=self.maps.game.count("@"))
+        self.coin_counter = CoinCounter(self.maps.game.count("@"))
         self.collected_now = None
 
         self.keys = Keys() # lowercase k, UPPERCASE K
-        self.locks = Locks(self.maps)
+
         self._progress_locks()
 
         self.jumps = 0
