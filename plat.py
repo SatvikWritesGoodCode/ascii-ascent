@@ -1591,13 +1591,13 @@ class Platformer:
 
         """The main function that handles platform generation and
         replacement. It moves all the platforms using the
-        other helper functions, and moves the player with it
+        other helper functions, moving the player with it
         if they are on top of a platform."""
 
         frame = self._check_platform_collision(frame)
         self.maps.update_platforms()
 
-        return frame
+        return frame, Gravity.APPLY
 
     def _progress_locks(self, *, only_not=False):
 
