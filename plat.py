@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Literal, Optional
+from collections.abc import Iterable
 from clear import clear
 from time import perf_counter, sleep
 from enum import Flag, Enum, auto
@@ -65,9 +66,6 @@ PLACEABLE = CHARS - MapCharset("`")
 
 SLOW_X, FAST_X = 1, 4
 Y = 2
-
-# Platform state return type.
-type Coords = set[tuple[FrozenC, str]]
 
 class Result(Flag):
 
@@ -176,11 +174,19 @@ class AliveCode(Enum):
 
 class Asterisks(set):
 
+    """A set object used in the Platformer class, which tracks
+    the coordinates of the asterisks that have been stepped on.
+    Every tick, the set is populated. The asterisks are then
+    deleted from the game map, and the set is cleared. Also
+    referred to as the 'stepped on' set in the code."""
+
     def __repr__(self):
 
         return f"Asterisks({','.join(str(i) for i in self)})"
 
     def __contains__(self, coord: Coordinates) -> bool:
+
+        """Allows for checking membership using normal coordinates."""
 
         if not isinstance(coord, Coordinates):
             raise ValueError(f"{coord} is not a coordinate.")
@@ -284,6 +290,32 @@ class CoinCounter:
 
     def __bool__(self):
         return bool(self.total)
+
+@dataclass(frozen=True, slots=True)
+class Cell:
+
+    coord: FrozenC
+    char: str
+
+    def __iter__(self):
+        return iter((self.coord, self.char))
+
+class Cells:
+
+    def __init__(self, cells: Iterable[Cell]=()):
+
+        self.cells = set(cells)
+
+    def add(self, cell: Cell):
+
+        self.cells.add(cell)
+
+    def __iter__(self):
+        return iter(self.cells)
+
+    @classmethod
+    def from_map(cls, game_map: GameMap, charset: MapCharset):
+        return Cells({Cell(*i) for i in game_map.find(charset)})
 
 class PlatformGenerator:
 
