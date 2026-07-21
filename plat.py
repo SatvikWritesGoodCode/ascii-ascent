@@ -472,6 +472,10 @@ class Locks:
         # Locks that are currently opened.
         self.open_locks = set()
 
+    def __iter__(self):
+
+        return iter(self.locks)
+
     def __getitem__(self, lock_char: str) -> set[FrozenC]:
 
         return self.locks[lock_char]
