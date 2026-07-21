@@ -987,6 +987,7 @@ class Platformer:
 
         self.keys = Keys() # lowercase k, UPPERCASE K
 
+        self.locks = Locks(game_map)
         self._progress_locks()
 
         self.jumps = 0
@@ -1633,6 +1634,8 @@ class Platformer:
 
         self.locks.edit("A", all(self.keys))
         self.locks.edit("X", self.keys.k != self.keys.K)
+
+        self.maps.update_locks(self.locks)
 
     @_gravity_affected(top_level=False)
     def _launch(self, coords):
@@ -2365,7 +2368,7 @@ class MapGenerator:
 
         if new_map is not None:
             self.e.maps = PlatformerMap(new_map)
-            self.e.locks = Locks(self.e.maps)
+            self.e.locks = Locks(new_map)
             self.e.portals = Portals(new_map)
 
     def __enter__(self):
