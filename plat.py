@@ -379,41 +379,32 @@ class PlatformGenerator:
 
 class CountdownGenerator:
 
-    __slots__ = ("iterators", "default", "last_value")
+    """A generator class that, given an initial game map,
+    calculates the values of the countdown blocks at their
+    coordinates."""
 
-    def __init__(self, initial=None):
+    __slots__ = ("iterators",)
+
+    def __init__(self, game_map: GameMap):
 
         self.iterators = dict()
-        self.default = initial is None
 
-        if not self.default:
-            for coord, char in initial:
+        for coord, char in Cells.from_map(game_map, COUNTDOWN):
 
-                r = range(int(char), -1, -1)
-                iterator = cycle(r)
-                next(iterator)
+            r = [(str(num) if num != 0 else "`") for num in range(int(char), -1, -1)]
+            iterator = cycle(r)
 
-                self.iterators[coord] = iterator
+            # Map already contains first position, skip to second
+            next(iterator)
 
-        self.last_value = initial
+            self.iterators[coord] = iterator
 
-    def __next__(self):
+    def __next__(self) -> Cells:
 
-        result = set()
-
-        if self.default:
-            return result
-
-        for coord, obj in self.iterators.items():
-
-            num = next(obj)
-            char = str(num) if num else "`"
-
-            result.add((coord, char))
-
-        self.last_value = result
-
-        return result
+        return Cells({
+            Cell(coord, next(iterator)) for coord, iterator in
+            self.iterators.items()
+        })
 
     def __iter__(self):
 
