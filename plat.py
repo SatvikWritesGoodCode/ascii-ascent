@@ -241,6 +241,14 @@ class Keys:
 @dataclass(slots=True)
 class ExecutionFrame:
 
+    """A class that tracks the state of the player, including
+    their coordinates and whether they are alive.
+    ExecutionFrame objects get passed through the movement
+    algorithms in the Platformer class.
+    The ExecutionFrame object has two methods: freeze
+    and normalize, which convert the Coordinate objects
+    into FrozenC and C respectively."""
+
     alive: AliveCode
     coords: Coordinates
     apply_grav: bool = True
