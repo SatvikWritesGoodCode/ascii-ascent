@@ -589,6 +589,10 @@ class PlatformerMap:
 @dataclass(frozen=True)
 class WinCondition:
 
+    """A dataclass that stores information on whether the player has
+    won or lost. The win_repr attribute is a formatted string
+    of the user's death / win."""
+
     win_repr: str
     status: Status
     jumps: int
