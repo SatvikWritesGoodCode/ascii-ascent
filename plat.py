@@ -155,6 +155,14 @@ class AliveCode(Enum):
     DEAD = 0
     ALIVE = 1
     WON = 2
+    
+    def is_dead(self):
+
+        """Returns whether the player is dead
+        (self == AliveCode.DEAD). Is false
+        when the player has won or is alive."""
+
+        return self.value == 0
 
     def is_alive(self):
 
