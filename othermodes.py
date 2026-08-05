@@ -319,10 +319,10 @@ class Progress(dict, ABC):
 
         cls_name = type(self).__name__
 
-        lst = ", ".join(
+        lst = "{" + ", ".join(
             f"{type(self).db.title(level_id)!r}: {status}"
             for level_id, status in self.items()
-        )
+        ) + "}"
 
         return f"{cls_name}({lst})"
 
