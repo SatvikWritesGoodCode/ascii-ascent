@@ -2488,7 +2488,7 @@ class LevelData:
         n = len(start_set)
 
         if n == 0:
-            raise ValueError("no start positions found.")
+            raise ValueError("no start positions found")
         elif n > 1:
             raise ValueError(
                 "found multiple start positions at {}".format(
@@ -2496,6 +2496,26 @@ class LevelData:
                 ))
 
         return list(start_set)[0].as_normal()
+
+    @property
+    def finish(self) -> set[FrozenC]:
+
+        """Returns the coordinates for the finish position of a game map ('F').
+        If there are no finish positions, an error will be made.
+        Note that maps can have multiple finish positions, so finish returns
+        a set of frozen coordinates."""
+
+        if self == LevelData.NULL:
+            return set()
+        elif not self:
+            raise ValueError(f"corrupted LevelData object {self}")
+
+        finish_set = self.map.find("F")
+
+        if not finish_set:
+            raise ValueError("No finish positions found.")
+
+        return finish_set
 
     @property
     def id(self) -> str:
