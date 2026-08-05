@@ -853,7 +853,7 @@ class Renderer:
         else:
             stdout.write(str(gmap))
 
-        if True: #self.platformer.debug:
+        if self.platformer.debug:
 
             dmap = self.platformer.maps.default
 
