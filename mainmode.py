@@ -450,7 +450,7 @@ class MainData:
 
     def __repr__(self):
 
-        return "MainData({}, {}, {}, {}, {}, {})".format(
+        return "MainData(username={}, icon={}, progress={}, stats={}, unviewed={}, settings={})".format(
             repr(self.username),
             repr(self.icon),
             repr(self.progress),
