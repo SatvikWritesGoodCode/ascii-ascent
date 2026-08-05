@@ -132,7 +132,7 @@ class Status:
 
     def __repr__(self):
 
-        return f"Status(result={self.result!s}, time={self.time:3f})"
+        return f"Status(result={self.result!r}, time={self.time:3f})"
 
     def __bool__(self):
 
