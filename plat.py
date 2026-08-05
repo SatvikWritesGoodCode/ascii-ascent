@@ -613,75 +613,85 @@ class WinDeathChecker:
 
         self.p = platformer
 
-    def add_to_stub(self, res: Result, stub: str):
+    @property
+    def result(self) -> Result | None:
 
-        if self.p.coin_counter.total == 1:
-            coin_str = f" Coin [{'+' if Result.COIN in res else 'x'}]"
-        elif not self.p.coin_counter:
-            coin_str = ""
-        else:
-            coin_str = f" Coins [{self.p.coin_counter!s}]"
+        if self.p.frame.alive.is_alive():
+            return
 
-        stub += coin_str
+        if self.p.frame.alive.is_dead():
+            return Result.NONE
+
+        res = Result.WON
+
+        if self.p.coin_counter and self.p.coin_counter.full:
+            res |= Result.COIN
 
         if self.p.timelimit != float("inf") and not self.p.time_surpassed:
-
             res |= Result.TIME
 
+        return res
+
+    def _win_str(self):
+
+        res = self.result
+
+        win_repr = "Won [+]"
+
+        total = self.p.coin_counter.total
+
+        if total > 1:
+            coin_str = f" Coins [{self.p.coin_counter!s}]"
+        elif total == 1:
+            coin_str = f" Coin [{'+' if Result.COIN in res else 'x'}]"
+        else:
+            coin_str = ""
+
+        win_repr += coin_str
+
+        if self.p.timelimit != float("inf") and not self.p.time_surpassed:
             time_str = " Time [+]"
 
         elif self.p.timelimit != float("inf"):
-
             time_str = " Time [x]"
         else:
             time_str = ""
 
-        stub += time_str
-        stub += f" [{self.p.elapsed:.2f}]"
+        win_repr += time_str
+        win_repr += f" [{self.p.elapsed:.2f}]"
 
-        return WinCondition(stub, Status.from_plat(self.p, res), self.p.jumps)
+        return WinCondition(win_repr, Status.from_plat(self.p, res), self.p.jumps)
 
-    def loss(self, stub):
+    def _loss_str(self):
 
-        if self.p.coin_counter.total == 1:
-            coin_str = " Coin [x]"
-        elif not self.p.coin_counter:
-            coin_str = ""
+        win_repr = "Won [x] "
+
+        total = self.p.coin_counter.total
+
+        if total > 1:
+            coin_str = "Coins [x] "
+        elif total == 1:
+            coin_str = "Coin [x] "
+
+        win_repr += coin_str
+
+        win_repr += "" if self.p.timelimit == float("inf") else "Time [x] "
+        win_repr += "[You died!]"
+
+        return WinCondition(win_repr, *self.p.death_status)
+
+    def get_return_value(self) -> WinCondition | None:
+
+        """Returns a WinCondition object that contains data
+        on whether the player has won or lost. In the case
+        that the player is still alive, nothing is returned."""
+
+        if self.result is None:
+            return
+        if self.result == Result.NONE:
+            return self._loss_str()
         else:
-            coin_str = " Coins [x]"
-
-        stub += coin_str
-
-        time_str = "" if self.p.timelimit == float("inf") else " Time [x]"
-
-        return WinCondition(stub + f"{time_str} [You died!] ",
-                            *self.p.death_status)
-
-    def get_return_value(self):
-
-        """A huge comparison block that checks whether the
-        player won or lost. It then prints the appropriate
-        string and returns the result."""
-
-        stub = "Won [+]"
-
-        # Coins were collected.
-        if (self.p.frame.alive.is_won() and self.p.coin_counter and
-                self.p.coin_counter.full):
-
-            res = Result.WON | Result.COIN
-
-            return self.add_to_stub(res, stub)
-
-        # Coin was not collected, but still alive.
-        elif self.p.frame.alive.is_won():
-
-            res = Result.WON
-            return self.add_to_stub(res, stub)
-
-        elif self.p.frame.alive == AliveCode.DEAD:
-
-            return self.loss("Won [x]")
+            return self._win_str()
 
 class Renderer:
 
