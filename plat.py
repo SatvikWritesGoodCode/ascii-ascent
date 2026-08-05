@@ -1633,7 +1633,7 @@ class Platformer:
         frame = self._check_platform_collision(frame)
         self.maps.update_platforms()
 
-        return frame, Gravity.APPLY
+        return frame
 
     def _progress_locks(self, *, only_not=False):
 
@@ -1966,7 +1966,7 @@ class Platformer:
         if coord is None:
             coord = self.frame.coords
 
-        self.maps.clear_coord(coord)
+        self.maps.clear(coord)
         self.collected_now = False
 
     def _clear_items(self):
