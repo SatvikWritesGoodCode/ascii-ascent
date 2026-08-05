@@ -818,7 +818,8 @@ class LevelPlayer:
             icon=self.main_data.icon,
             meta=False,
             display_desc=self.main_data.settings.display_desc,
-            display_coords=self.main_data.settings.display_coords
+            display_coords=self.main_data.settings.display_coords,
+            display_percentage=self.main_data.settings.display_percentage
         )
 
         new_status, jumps = platformer.play()

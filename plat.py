@@ -917,6 +917,7 @@ class Platformer:
         "meta",
         "display_desc",
         "display_coords",
+        "display_percentage",
 
         # Derived Data
         "start",
@@ -953,7 +954,7 @@ class Platformer:
 
     def __init__(self, level_data: LevelData, /, *,
                  icon: str="O", debug: bool=False, meta: bool=True,
-                 display_desc=True, display_coords=False) -> None:
+                 display_desc=True, display_coords=False, display_percentage=True) -> None:
 
         """Args:
 
@@ -1043,6 +1044,7 @@ class Platformer:
 
         self.display_desc = display_desc
         self.display_coords = display_coords
+        self.display_percentage = display_percentage
 
     @property
     def gravity(self):
@@ -2102,11 +2104,13 @@ class Tower(Platformer):
 
     def __init__(self, level_data: LevelData, *, icon: str="O",
                  debug: bool=False, meta: bool=True,
-                 display_desc: bool=True, display_coords: bool=False):
+                 display_desc: bool=True, display_coords: bool=False,
+                 display_percentage: bool=True):
 
         super().__init__(level_data,
                          icon=icon, debug=debug, meta=meta, display_desc=display_desc,
-                         display_coords=display_coords
+                         display_coords=display_coords,
+                         display_percentage=display_percentage
                          )
 
         self.bottom = 0
@@ -2463,13 +2467,14 @@ class Endless(Platformer):
     def __init__(self,
                  parameters: GenerationParameters, *,
                  icon: str="O", debug: bool=False, _level_data: bool=None,
-                 display_coords: bool=False):
+                 display_coords: bool=False, display_percentage: bool=True):
 
         self.parameters = parameters
 
         self.icon = icon
         self.debug = debug
         self.display_coords = display_coords
+        self.display_percentage = display_percentage
 
         if _level_data is None:
 
@@ -2480,7 +2485,8 @@ class Endless(Platformer):
             data = _level_data.copy()
 
         super().__init__(data, icon=icon, debug=debug, meta=False,
-                         display_desc=False, display_coords=display_coords)
+                         display_desc=False, display_coords=display_coords,
+                         display_percentage=display_percentage)
 
     @property
     def stretch(self):

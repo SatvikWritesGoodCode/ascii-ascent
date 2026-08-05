@@ -71,11 +71,12 @@ class EndlessData:
 class EndlessPlayer:
 
     def __init__(self, mode: Literal[1, 2], icon: str="O",
-                 display_coords: bool=False):
+                 display_coords: bool=False, display_percentage: bool=True):
 
         self.mode = mode
         self.icon = icon
         self.display_coords = display_coords
+        self.display_percentage = display_percentage
 
         self.parameters = GenerationParameters.from_mode(mode)
 
@@ -91,12 +92,15 @@ class EndlessPlayer:
             if first:
                 endless = Endless(self.parameters, icon=self.icon,
                                   _level_data=initial_data,
-                                  display_coords=self.display_coords
+                                  display_coords=self.display_coords,
+                                  display_percentage=self.display_percentage
                                   )
                 first = False
             else:
                 endless = Endless(self.parameters, icon=self.icon,
-                                  display_coords=self.display_coords)
+                                  display_coords=self.display_coords,
+                                  display_percentage=self.display_percentage
+                                  )
 
             status, jumps = endless.play()
 
@@ -184,7 +188,8 @@ class _EndlessMode:
 
             current_score = self.score_from_mode(mode)
             score, jumps = EndlessPlayer(mode, self.endless_mode.icon,
-                                         self.endless_mode.data.main_data.settings.display_coords
+                                         self.endless_mode.data.main_data.settings.display_coords,
+                                         self.endless_mode.data.main_data.settings.display_percentage,
                                          ).play(self.data[mode])
 
             if score > current_score:
@@ -421,6 +426,9 @@ to share and store created levels.\n"""
                     *_, new_jumps = Platformer(
                         level_data,
                         icon=self.custom_mode.data.main_data.icon,
+                        display_desc=self.custom_mode.data.main_data.settings.display_desc,
+                        display_coords=self.custom_mode.data.main_data.settings.display_coords,
+                        display_percentage=self.custom_mode.data.main_data.settings.display_percentage,
                     ).play()
 
                     self.custom_mode.total_attempts += 1
@@ -543,6 +551,7 @@ class PublicLevelViewer:
         new = Platformer(level_data, icon=self.custom_mode.icon,
                          display_desc=self.custom_mode.data.main_data.settings.display_desc,
                          display_coords=self.custom_mode.data.main_data.settings.display_coords,
+                         display_percentage=self.custom_mode.data.main_data.settings.display_percentage,
                          ).play()
 
         new_status, new_jumps = new
@@ -981,7 +990,9 @@ class PackMode:
 
             status, jumps = Platformer(level, icon=self.data.main_data.icon,
                                        display_desc=self.data.main_data.settings.display_desc,
-                                       display_coords=self.data.main_data.settings.display_coords).play()
+                                       display_coords=self.data.main_data.settings.display_coords,
+                                       display_percentage=self.data.main_data.settings.display_percentage,
+                                       ).play()
 
             self.data.main_data.progress.update_id(level.id, status)
 
