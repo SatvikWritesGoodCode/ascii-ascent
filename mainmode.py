@@ -301,11 +301,13 @@ class MainSettings:
 
     display_desc: bool=True
     display_coords: bool=False
+    display_percentage: bool=True
     autoplay: bool=False
 
     NAMES: ClassVar[dict[str, str]] = {
         "display_desc": "Display Description",
         "display_coords": "Display Coordinates",
+        "display_percentage": "Display Percentage",
         "autoplay": "Autoplay",
     }
 
@@ -315,6 +317,8 @@ is displayed or hidden while playing. (The description of a
 level can always be viewed by typing 'desc' or 'e'.)""",
         "display_coords": """Whether your coordinates 
 are displayed or hidden while playing. Turned off by default.""",
+        "display_percentage": """Whether the percentage
+is displayed or hidden while playing. Turned on by default.""",
         "autoplay": """Whether after beating a main level, 
 the next level will automatically be played. Turned off by 
 default. (If this option is selected, type 'exit' to stop 
