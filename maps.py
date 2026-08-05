@@ -1304,6 +1304,10 @@ class Coordinates(ABC):
     def y(self) -> int:
         ...
 
+    @property
+    def norm(self):
+        return abs(complex(self))
+
     def __add__(self, other: Coordinates) -> Self:
 
         """Add two coordinates as if they are vectors."""
@@ -1336,7 +1340,8 @@ class Coordinates(ABC):
         """Return the absolute value of a coordinate. NOTE:
         this is a component-wise operation. |<a, b>| is not
         the length of <a, b> or sqrt(a^2 + b^2), rather it is
-        a new coordinate <|a|, |b|>."""
+        a new coordinate <|a|, |b|>. For the length of <a, b>,
+        use the Coordinates.norm property."""
 
         return type(self)(x=abs(self.x), y=abs(self.y))
 
