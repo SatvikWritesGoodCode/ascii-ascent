@@ -327,6 +327,14 @@ playing.)"""
             if not isinstance(getattr(self, attr), bool):
                 raise TypeError(f"{attr} is not of type bool.")
 
+    def __repr__(self):
+
+        return "MainSettings(display_desc={}, display_coords={}, autoplay={})".format(
+            self.display_desc,
+            self.display_coords,
+            self.autoplay
+        )
+
     def toggle(self, attr_name: str):
 
         current = getattr(self, attr_name)
