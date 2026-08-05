@@ -1072,10 +1072,6 @@ class Platformer:
 
         return Status(Result.NONE, float("inf")), self.jumps
 
-    @property
-    def null_status(self):
-        return Status(Result.NONE, float("inf")), 0
-
     def _new_move(self, move):
 
         if self.down:
@@ -2070,7 +2066,7 @@ class Platformer:
         if the player wins or loses."""
 
         if self._level_data == LevelData.NULL:
-            return self.null_status
+            return self.death_status
 
         self._prepare_game()
 
