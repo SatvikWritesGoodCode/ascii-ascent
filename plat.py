@@ -607,6 +607,13 @@ class WinCondition:
 
 class WinDeathChecker:
 
+    """Checks whether the user has won or lost every tick
+    and creates a formatted string printed at the
+    end of the game if so. The object has one main
+    method, get_return_value which returns
+    a WinCondition object if the user has won or lost,
+    or None if not."""
+
     __slots__ = ("p",)
 
     def __init__(self, platformer: Platformer):
