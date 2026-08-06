@@ -702,91 +702,271 @@ class WinDeathChecker:
 
 class Renderer:
 
+    """A class that handles rendering the game every tick."""
+
     __slots__ = (
-        "text_length",
         "platformer",
-        "checker",
-        "_tower",
-        "display_desc",
-        "display_coords")
+        "checker",)
 
-    def __init__(self, platformer: Platformer,
-                 display_desc=True, display_coords=False
-                 ):
+    def __init__(self, platformer: Platformer):
 
-        self.text_length = platformer._level_data.text_length(display_desc)
-        self.display_desc = display_desc
-        self.display_coords = display_coords
         self.platformer = platformer
-        self.checker = WinDeathChecker(platformer)
-        self._tower = isinstance(platformer, Tower)
 
-    def _fill(self, string: str) -> str:
+        self.checker = WinDeathChecker(platformer)
+
+    @property
+    def display_desc(self):
+        return self.platformer.display_desc
+
+    @property
+    def display_coords(self):
+        return self.platformer.display_coords
+
+    @property
+    def display_percentage(self):
+        return self.platformer.display_percentage
+
+    @property
+    def level_data(self):
+        return self.platformer._level_data
+
+    @property
+    def tower(self):
+        return isinstance(self.platformer, Tower)
+
+    @property
+    def start(self):
+        return self.platformer._level_data.start
+
+    @property
+    def finish(self):
+        return self.platformer._level_data.finish
+
+    @property
+    def text_length(self) -> int:
+
+        """Returns the number of newlines covered by the text displayed
+        above the time and the map in Platformer mode.
+        This takes into account things like info messages, the title
+        and description, following the exact formatting patterns
+        used in the Platformer mode.
+
+        This is important as the text length dictates the exact space
+        taken up by messages above the map. This allows headers to be
+        padded with that many newlines, preventing the game map from
+        jittering around with new messages."""
+
+        if self.level_data == LevelData.NULL:
+            return -1
+
+        new_title = shorten(self.level_data.title.upper(),
+                            width=(self.level_data.map.x_len // 3),
+                            placeholder="..."
+                            )
+
+        formatted_desc = shorten(
+            f"[{new_title!s}] {(self.level_data.desc if self.display_desc else '')!s}",
+            width=self.level_data.map.x_len, placeholder="..."
+        )
+
+        # All possible text displayed at the top of the screen
+        # in Platformer game mode.
+
+        txts = [
+            formatted_desc,
+            *self.level_data.info,
+            "[||] PAUSED",
+            "Launch!"
+        ]
+
+        # Add the prefix 'O |', '? |', etc. you see at the top
+        # of the screen in Platformer mode.
+        # Also removes newlines.
+
+        txts = map(lambda txt: f"@ | {txt}".replace("\n", ""), txts)
+
+        # Find the maximum number of newlines any of these strings take
+        # up when wrapped.
+
+        return max(len(wrap(txt, width=self.level_data.map.x_len+2)) for txt in txts)
+
+    def fill(self, string: str) -> str:
+
+        """Pads a string displayed above the map with newlines to the map's
+        text_length, as well as wrapping the string to the length
+        of the screen. This prevents the screen jittering up and down
+        as the number of newlines in the above text changes."""
 
         string = wrap(string.replace("\n", ""),
                       width=self.platformer.maps.game.x_len+2)
 
+        # Number of newlines to pad with
         difference = self.text_length - len(string)
+
         return "\n".join(string) + ("\n" * difference)
 
-    def _format_time(self):
+    @property
+    def time_str(self):
+
+        """Returns a formatted representation of the time.
+        If there is no time limit to the map, then this property
+        returns an empty string."""
+
+        if self.platformer.timelimit == float("inf"):
+            return ""
 
         elapsed, timelimit = self.platformer.elapsed, self.platformer.timelimit
 
-        # Exclamation marks.
-        exc = (" (!) " if elapsed > timelimit else " ")
+        # Exclamation mark if timelimit is exceeded, to give a sense of urgency
+        exc = (" (!)" if elapsed > timelimit else "")
 
-        if self.platformer.timelimit != float("inf"):
-            return f"Time: <{elapsed:.2f}|{timelimit:.2f}>{exc}"
-        else:
+        return f"Time: <{elapsed:.2f}|{timelimit:.2f}>{exc}"
+
+    @property
+    def coord_str(self):
+
+        """Returns a formatted string containing the player's
+        coordinates."""
+
+        if not self.display_coords:
             return ""
 
-    def _update_camera(self, y: int) -> None:
+        return f"Coords: {self.platformer.frame.coords!s}"
 
-        """Finds the new top and bottom y-coordinates for the screen,
-        positioning the player in the middle of the screen if it can.
+    @property
+    def percentage_str(self):
+
+        """Returns a formatted percentage of the way to the finish.
+        If there are multiple finish locations, it uses the
+        shortest existing distance to a location."""
+
+        if not self.display_percentage:
+            return ""
+
+        coords = self.platformer.frame.coords
+
+        closest_finish = min(self.finish, key=lambda x: (x - coords).norm)
+
+        min_distance = (coords - closest_finish).norm
+        distance = (self.start - closest_finish).norm
+
+        percentage = 1.0 - min(1.0, min_distance / distance)
+
+        return f"<{percentage:.0%}>"
+
+    @property
+    def stats_bar(self):
+
+        """Returns the bar of stats that exists above the game map,
+        displaying the time, coords, and percentage. If the map
+        does not have a time limit or the settings for any of the
+        pieces of data are turned off, they are omitted from the
+        bar. If all the stats are missing, then an empty
+        string is returned."""
+
+        stats = (self.time_str, self.coord_str, self.percentage_str)
+
+        return "".join(stat + " " for stat in stats if stat).strip()
+
+    @property
+    def bar_exists(self):
+
+        """Returns whether the bar of stats above the map
+        is shown or not. The bar is omitted from the GUI
+        if the time, coords, and percentage are not displayed."""
+
+        return any(
+            (self.display_percentage,
+             self.display_coords,
+             self.platformer.timelimit != float("inf")
+             )
+        )
+
+    @property
+    def window_height(self):
+
+        """Returns the total number of newlines taken up by the
+        platformer GUI in the terminal, from the top all the way down
+        (excluding the input arrow)."""
+
+        y_len = self.platformer.screen_len if self.tower else self.platformer.maps.game.y_len
+
+        map_len = y_len + 2
+
+        return map_len + self.text_length + self.bar_exists
+
+    @property
+    def screen_slice(self) -> None:
+
+        """Finds the top and bottom y-coordinates to slice the
+        screen for Tower objects, creating a 'camera' that
+        follows the player around. This is done by
+        positioning the player in the middle of the screen.
         If the bottom, which is 6 below the y coordinate, is less than
         0, it will default to 0. Similarly, if 6 above y is
-        above the map, it will default to the map maximum."""
+        above the map, it will default to the map maximum.
 
-        self.platformer.bottom = max(0, y - (self.platformer.screen_len // 2))
+        In the case of a regular Platformer and not a Tower
+        object, it returns a regular slice."""
 
-        self.platformer.top = min(self.platformer.maps.game.y_len - 1,
-                                  self.platformer.bottom + self.platformer.screen_len)
+        if not self.tower:
+            print("Not a tower")
+            input()
+            return slice(None, None, None)
 
-        if self.platformer.top == self.platformer.maps.game.y_len - 1:
-            self.platformer.bottom = \
-                (self.platformer.top - self.platformer.screen_len)
+        y = self.platformer.frame.coords.y
+
+        bottom = max(0, y - (self.platformer.screen_len // 2))
+
+        top = min(
+            self.platformer.maps.game.y_len - 1,
+            bottom + self.platformer.screen_len
+        )
+
+        if top == self.platformer.maps.game.y_len - 1:
+            bottom = top - self.platformer.screen_len
+
+        return slice(bottom, top, None)
+
+    def _prefix(self, header: str, prefix: str):
+
+        """Attaches a prefix of length 1 to a header. This is shown in the GUI
+        in game. For example, the player's icon is typically used as a prefix."""
+
+        if len(prefix) != 1:
+            raise ValueError("Expected string of length 1")
+
+        return f"{prefix} | {header}"
 
     def print_desc(self):
 
+        """Prints the description of a level, which can be shown
+        by typing 'desc' or pressing [e]. It formats the description
+        into a box with the same height as the platformer,
+        while also displaying metadata such as the author
+        and date of creation if the 'meta' parameter is set to True."""
+
         x_len = self.platformer.maps.game.x_len
 
-        if self._tower:
-            y_len = self.platformer.screen_len
+        # Do not show anything if description is empty
+        if self.platformer.desc:
+            desc = f"[{self.platformer.title.upper()}] Description: {self.platformer.desc}"
         else:
-            y_len = self.platformer.maps.game.y_len
+            desc = ""
 
-        full_y_len = (y_len + 2) + self.text_length
-        if self.platformer.timelimit != float("inf"):
-            full_y_len += 1
+        lines = [f"| {line:<{x_len-2}} |" for line in wrap(desc, width=x_len-2)]
 
-        desc = (
-            f"[{self.platformer.title.upper()}] Description: {self.platformer.desc}"
-        ) if self.platformer.desc else ""
+        # List of lines up to the end of the description
+        display = ["~"*(x_len+2)] + lines
 
-        lines = wrap(
-            desc, width=x_len-2)
+        # Lines for metadata
+        r = 2 * self.platformer.meta
 
-        lines = [f"| {line:<{x_len-2}} |" for line in lines]
-
-        display = ["~"*(x_len+2)]
-        display.extend(lines)
-
-        r = 2 if self.platformer.meta else 0
-        remainder = (full_y_len - r) - len(display) - 1
+        # Number of blank lines to fill
+        remainder = (self.window_height - r - 1) - len(display)
         display.extend([f"| {' '*(x_len-2)} |" for i in range(remainder)])
 
+        # Append metadata lines
         if self.platformer.meta:
             author = f"[Created by: {self.platformer.author}]"
             date = f"[Date of creation: {self.platformer.date}]"
@@ -797,97 +977,120 @@ class Renderer:
 
         stdout.write("\n".join(display) + "\n")
 
-    def _prefix(self, string: str, prefix: str):
+    def print_map(self, game_map: GameMap | None=None):
 
-        if len(prefix) != 1:
-            raise ValueError("Expected string of length 1")
+        """Prints the game map. It also prints the
+        default map depending on the debug argument
+        given to the platformer. If the debug argument
+        is HORIZONTAL, the default map is printed
+        to the right of the game map. Else,
+        it is printed below."""
 
-        return f"{prefix} | {string}"
+        if game_map is None:
+            game_map = self.platformer.maps.game
 
-    def _render(self, game_map: GameMap=None, string: str=""):
+        screen_slice = self.screen_slice
 
-        """Prints the map and all the other information."""
+        game_map = game_map[screen_slice]
+
+        map_str = str(game_map)
+
+        if self.platformer.debug != Debug.NONE:
+
+            default_map = self.platformer.maps.default[screen_slice]
+
+            default_str = str(default_map)
+
+            if self.platformer.debug == Debug.HORIZONTAL:
+                new_str = []
+                for l1, l2 in zip(map_str.splitlines(), default_str.splitlines()):
+                    new_str.append(f"{l1}{l2[1:]}")
+                map_str = "\n".join(new_str) + "\n"
+
+            elif self.platformer.debug == Debug.VERTICAL:
+                map_str += default_str
+
+        stdout.write(map_str)
+
+    def print_header(self, header: str | None=None) -> None:
+
+        """Prints the header above the game map.
+        There is an option to provide a custom string,
+        which is used in the platformer. It will print
+        the info message if the player is currently
+        on an info block. Else, it will print the title
+        and shortened description."""
+
+        # Makes the following code more concise
+        def write(header: str, prefix: str) -> None:
+            stdout.write(self.fill(self._prefix(header, prefix)) + "\n")
 
         x_len = self.platformer.maps.game.x_len
 
-        if self._tower:
-            self._update_camera(self.platformer.frame.coords.y)
-
-        if string:
-            stdout.write(
-                self._fill(self._prefix(str(string), self.platformer.icon)) + "\n")
+        if header is not None:
+            write(str(header), self.platformer.icon)
 
         elif self.platformer.frame.coords in self.platformer.info_msgs:
-
             info_msg = self.platformer.info_msgs[self.platformer.frame.coords]
 
-            # Reduce screen movement when playing.
-
-            stdout.write(
-                self._fill(self._prefix(str(info_msg), "?")) + "\n")
+            write(str(info_msg), "?")
 
         else:
 
-            title_str = shorten(self.platformer.title.upper(),
-                                width=x_len // 3, placeholder="...")
+            title_str = shorten(
+                self.platformer.title.upper(),
+                width=x_len // 3, placeholder="..."
+            )
 
-            desc_str = self.platformer.desc
-            string = shorten(
-                f"[{title_str!s}] {(desc_str if self.display_desc else '')!s}",
-                width=x_len, placeholder="...")
+            desc_str = " " + self.platformer.desc if self.display_desc else ""
 
-            stdout.write(
-                self._fill(self._prefix(str(string), self.platformer.icon)) + "\n")
+            header = shorten(
+                f"[{title_str!s}]{desc_str!s}",
+                width=x_len, placeholder="..."
+            )
 
-        if self.platformer.timelimit != float("inf"):
+            write(header, self.platformer.icon)
 
-            if self.display_coords:
-                coord_str = f"Coords: {self.platformer.frame.coords!s}"
-            else:
-                coord_str = " "
+    def render(self, game_map: GameMap | None=None, header: str=None):
 
-            time_str = self._format_time()
+        """Renders the platformer onto the terminal. There are two
+        optional arguments: a custom game map and a custom header.
+        These are used in game to modify the output in different
+        situations.
 
-            if not (coord_str.isspace() and time_str.isspace()):
-                stdout.write(f"{time_str}{coord_str}\n")
+        The GUI for the platformer consists of a header,
+        followed by a bar containing the time limit, coordinates,
+        and percentage. Finally, it prints out the game map."""
 
-        stdout.flush()
-
-        gmap = self.platformer.maps.game if game_map is None else game_map
-
-        if self._tower:
-            stdout.write(str(gmap[self.platformer.slice]))
-        else:
-            stdout.write(str(gmap))
-
-        if self.platformer.debug:
-
-            dmap = self.platformer.maps.default
-
-            if self._tower:
-                stdout.write(str(dmap[self.platformer.slice]))
-            else:
-                stdout.write(str(dmap))
+        self.print_header(header)
 
         stdout.flush()
 
-    def render(self):
+        if self.bar_exists:
+            stdout.write(self.stats_bar + "\n")
 
-        """This will truly handle all rendering for the main loop.
-        It will check win
-        conditions to figure out whether it should display the win/death
-        message.
-        Else, it will also print the time."""
+        stdout.flush()
 
-        self._render()
+        self.print_map(game_map)
 
-        val = self.checker.get_return_value()
+        stdout.flush()
 
-        if val is not None:
+    def game_over(self, win_condition: WinCondition):
 
-            stdout.write(val.win_repr + "\n")
-            sleep(2)
-            return val.status, val.jumps
+        """Takes in a win condition and prints the
+        string representation before waiting for two
+        seconds. This happens when the player has
+        either won or lost, and it is effectively a
+        'game over' function."""
+
+        stdout.write(win_condition.win_repr + "\n")
+        sleep(2)
+
+class Debug(Enum):
+
+    NONE = 0
+    HORIZONTAL = auto()
+    VERTICAL = auto()
 
 class Platformer:
 
@@ -955,13 +1158,20 @@ class Platformer:
         # Other
         "move",
         "renderer",
+        "checker",
         # "log_map", # `Log
 
     )
 
-    def __init__(self, level_data: LevelData, /, *,
-                 icon: str="O", debug: bool=False, meta: bool=True,
-                 display_desc=True, display_coords=False, display_percentage=True) -> None:
+    def __init__(self,
+                 level_data: LevelData, /, *,
+                 icon: str="O",
+                 debug: Debug=Debug.NONE,
+                 meta: bool=True,
+                 display_desc=True,
+                 display_coords=False,
+                 display_percentage=True
+                 ) -> None:
 
         """Args:
 
@@ -1044,14 +1254,12 @@ class Platformer:
 
         self.gravity_changed = False
 
-        self.renderer = Renderer(self,
-                                 display_desc=display_desc,
-                                 display_coords=display_coords
-                                 )
-
         self.display_desc = display_desc
         self.display_coords = display_coords
         self.display_percentage = display_percentage
+
+        self.renderer = Renderer(self)
+        self.checker = WinDeathChecker(self)
 
     @property
     def gravity(self):
@@ -2081,10 +2289,13 @@ class Platformer:
 
         while True: # Game Loop
 
-            data = self.renderer.render()
+            self.renderer.render()
 
-            if data:
-                return data
+            data = self.checker.get_return_value()
+
+            if data is not None:
+                self.renderer.game_over(data)
+                return data.status, data.jumps
 
             data = self._parse_move(perf_counter(),
                                     IOUtils.input("-> "))
@@ -2107,7 +2318,7 @@ class Tower(Platformer):
     This mode can also be extended to custom-made levels with
     any height, though it has not been tested."""
 
-    slots = ("bottom", "top", "screen_len")
+    __slots__ = ("screen_len",)
 
     def __init__(self, level_data: LevelData, *, icon: str="O",
                  debug: bool=False, meta: bool=True,
@@ -2120,14 +2331,7 @@ class Tower(Platformer):
                          display_percentage=display_percentage
                          )
 
-        self.bottom = 0
-        self.top = self.maps.game.y_len - 1
         self.screen_len = Constants.Y_LEN
-
-    @property
-    def slice(self):
-
-        return slice(self.bottom, self.top, None)
 
 class MapGenerator:
 
