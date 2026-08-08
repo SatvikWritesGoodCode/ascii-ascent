@@ -910,8 +910,6 @@ class Renderer:
         object, it returns a regular slice."""
 
         if not self.tower:
-            print("Not a tower")
-            input()
             return slice(None, None, None)
 
         y = self.platformer.frame.coords.y
