@@ -1138,7 +1138,6 @@ class Platformer:
 
         # Collection Related
         "coin_counter",
-        "collected_now",
 
         # Environment Data
         "keys",
@@ -1216,7 +1215,6 @@ class Platformer:
         self.meta = meta
 
         self.coin_counter = CoinCounter(self.maps.game.count("@"))
-        self.collected_now = None
 
         self.keys = Keys() # lowercase k, UPPERCASE K
 
@@ -1304,25 +1302,26 @@ class Platformer:
 
         # self.log_map[coords] = self.icon # `Log
 
-        i = self.maps.default[coords]
-        match i:
+        collected = False
 
+        i = self.maps.default[coords]
+
+        match i:
             case "@":
                 self.coin_counter.update()
-                self.collected_now = True
+                collected = True
             case "k" | "K":
-                self.collected_now = True
                 self.keys.set_char(i, True)
+                collected = True
             case "h" | "H":
                 self.keys.set_char("k" if i == "h" else "K", False)
-
             case "/":
                 self.hidden = True
             case "\\":
                 self.hidden = False
 
-        if self.collected_now:
-            self._clear_collectible(coords)
+        if collected:
+            self.maps.clear(coords)
 
         if i in KEYS:
             self._progress_locks()
@@ -2168,26 +2167,13 @@ class Platformer:
 
         return frame
 
-    def _clear_collectible(self, coord=None):
-
-        if not self.collected_now:
-            return
-
-        if coord is None:
-            coord = self.frame.coords
-
-        self.maps.clear(coord)
-        self.collected_now = False
-
     def _clear_items(self):
 
-        """Clears the coins, player icon, and asterisks"""
+        """Clears the asterisks stepped on during the tick from
+        the map, as well as patching up the player's coordinates."""
 
-        self._clear_collectible()
         self.maps.clear_asterisks(self.stepped_on)
-
-        if not self.collected_now:
-            self.maps.both.patch(self.frame.coords)
+        self.maps.both.patch(self.frame.coords)
 
     def _restart(self):
 
@@ -2602,8 +2588,6 @@ class MapGenerator:
         self.e.frame = ExecutionFrame(AliveCode.ALIVE, C(0, 0))
 
         self.e.keys = Keys()
-
-        self.e.collected_now = False
 
         self.e.stepped_on = Asterisks()
         self.e.hidden = True
