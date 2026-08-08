@@ -1092,25 +1092,28 @@ class Debug(Enum):
 
 class Platformer:
 
-    """An object that stores the entire game state
-    and has the capability of playing the game.
-    It takes in a game map, and also has optional parameters:
+    """The main class of the ascii-ascent project. This takes
+    in a LevelData object and allows the user to play it
+    through the terminal.
 
-    - desc: to be displayed on top of the game.
-    - timelimit: A timelimit to beat the game under.
-    This is not enforced, but a value is sent out of .play()
-    if you finish in time.
-    - icon: The player icon. Will raise a ValueError if it
-    is a character used inside the game (such as '#'). Default 'O'.
-    - debug: A parameter that also displays the default map.
-    Default False."""
+    Besides level data, the Platformer takes in several other
+    keyword arguments:
+    - The player icon (set to 'O' on default)
+    - An optional debug mode, which displays the map
+    without the player's icon (known as the default map)
+    - A parameter controlling whether metadata such
+    as the author and date of creation are shown
+    to the user
+    - Settings controlling whether the description,
+    coordinates, or percentage are shown above the game map.
+    """
 
     __slots__ = (
 
         # Level Data Object
         "_level_data",
 
-        # Level Data
+        # Level Data (expanded out for easy access)
         "maps",
         "desc",
         "timelimit",
@@ -1119,7 +1122,7 @@ class Platformer:
         "author",
         "date",
 
-        # Other Parameters
+        # Keyword Parameters
         "icon",
         "debug",
         "meta",
@@ -1166,18 +1169,10 @@ class Platformer:
                  icon: str="O",
                  debug: Debug=Debug.NONE,
                  meta: bool=True,
-                 display_desc=True,
-                 display_coords=False,
-                 display_percentage=True
+                 display_desc: bool=True,
+                 display_coords: bool=False,
+                 display_percentage: bool=True
                  ) -> None:
-
-        """Args:
-
-        level_data: LevelData - The level to be played.
-        icon: str='O' - The player icon.
-        debug: bool=False - FOR DEVELOPMENT. Displays the default_map
-        under the game map while playing.
-        """
 
         self._level_data = level_data.copy()
 
