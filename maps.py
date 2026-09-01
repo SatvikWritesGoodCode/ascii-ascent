@@ -28,8 +28,6 @@ used in the game, such as the C coordinate system and the GameMap.
 Finally, it implements the LevelData class, which defines what a
 'level' is."""
 
-type Result = TypeVar("Result")
-
 class SerializationError(Exception):
 
     ...
@@ -2654,7 +2652,7 @@ class LevelData:
         """A LevelData object is falsy if any of the data fields
         in the object are None."""
 
-        return not any(attr is None for attr in self.as_tuple())
+        return all(attr is not None for attr in self.as_tuple())
 
     def __eq__(self, other):
 

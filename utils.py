@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from clear import clear
 from time import sleep
 from random import random, choices, shuffle, sample
@@ -25,8 +27,6 @@ functions.
 
 This module also contains some other miscellaneous classes like
 Achievements and PerlinNoise."""
-
-type Progress = TypeVar("Progress")
 
 class IOUtils:
 

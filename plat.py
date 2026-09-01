@@ -1182,15 +1182,6 @@ class Platformer:
 
         title, author, date, desc, game_map, time, info_msgs, _ = level_data
 
-        if time is None:
-            time = float("inf")
-
-        if info_msgs is None:
-            info_msgs = []
-
-        if desc is None:
-            desc = ""
-
         if icon in CHARS:
             raise ValueError(f"Character {icon!r} reserved for use in maps.")
 
@@ -1219,7 +1210,7 @@ class Platformer:
         self.keys = Keys() # lowercase k, UPPERCASE K
 
         self.locks = Locks(game_map)
-        self._progress_locks()
+        self._progress_locks() # Handles NOT locks, etc.
 
         self.jumps = 0
         self.start_time = None
@@ -1228,8 +1219,6 @@ class Platformer:
 
         self.portals = Portals(game_map)
 
-        self.move = MovementParameters()
-
         # Spaces moved:
         # - on x when not sprinting (sx)
         # - on x when sprinting (fx)
@@ -1237,13 +1226,22 @@ class Platformer:
         # - on y currently (y)
         # - on y when sprinting (fy)
 
+        self.move = MovementParameters()
+
         self.info_msgs = InfoMsgs.from_memory_efficient(
             self._level_data.info, self.maps.default
         )
 
         self.down = True
 
+        # Whether the gravity has been flipped during this tick
         self.gravity_changed = False
+
+        # Whether the player has been teleported during this tick
+        self.teleported = False
+
+        # Both of these variables prevent a player from being flipped/teleported
+        # more than once per tick
 
         self.display_desc = display_desc
         self.display_coords = display_coords
@@ -1282,6 +1280,12 @@ class Platformer:
 
     def _new_move(self, move):
 
+        """If gravity is flipped, the controls for the player
+        need to be adjusted. For example, pressing 'sd' will
+        now act like jumping to the right, but upside down.
+        This function modifies the player's move so that it
+        is consistent with normal gravity."""
+
         if self.down:
             return move
         else:
@@ -1292,13 +1296,14 @@ class Platformer:
 
     def _check_item_collection(self, coords: Coordinates):
 
-        """Checks a condition during every tick of movement in
-        self._new_position_helper(), self._apply_gravity, etc.
-        This condition usually is involved with collecting an item,
-        or interacting with a block.
-
-        This function DOES NOT RETURN ANYTHING. It only modifies
-        game state."""
+        """
+        A function that runs during every tick of the player's movement/path,
+        such as in self._new_position_helper(), self._apply_gravity(), etc.
+        This function checks whether an item is currently at the player's
+        coordinate, and if so, collects it. For example, the function
+        collects coins and keys, as well as hole blocks that get rid
+        of keys. It also hides or unhides the character. This function
+        does not return anything, as it only modifies the game state."""
 
         # self.log_map[coords] = self.icon # `Log
 
@@ -1320,34 +1325,48 @@ class Platformer:
             case "\\":
                 self.hidden = False
 
+        # Removes coins or keys from the map
         if collected:
             self.maps.clear(coords)
 
+        # Updates locks now that the number of keys collected has changed
         if i in KEYS:
             self._progress_locks()
 
-    def _affected_frame(self, coords: C) -> ExecutionFrame:
+    def _affected_frame(self, coords: C) -> tuple[ExecutionFrame, bool]:
 
-        """Checks a condition during every tick of movement in
-        self._new_position_helper(), self._apply_gravity, etc.
-        This condition usually is involved with collecting an item,
-        or interacting with a block.
+        """Performs an operation on the player's frame in special cases,
+        returning this new modified frame.
+        The list of things _affected_frame actually does is:
+        - Marks the player as having won if they are currently at a finish
+        block
+        - Flips the player's gravity and returns the gravity-affected frame
+        if the gravity has not been flipped before.
+        - Teleports the player if they are in a portal and have not been
+        teleported before.
+        - Launches the player if they are at a launcher block.
+        - Else, it just returns the player's frame.
 
-        This function RETURNS A FRAME, and also a boolean on whether
-        the function did anything. (This is for return type consistency
-        and also making the check in the caller function quicker.)"""
+        The function also returns a boolean on whether the frame was modified by the function.
+        """
 
         if self.maps.default[coords] == "F":
             return ExecutionFrame(AliveCode.WON, coords), True
 
-        if (self.gravity_changed is False and
-                self.maps.default[coords] in GRAVITY):
+        if (
+            self.gravity_changed is False and
+            self.maps.default[coords] in GRAVITY
+        ):
 
             self.gravity_changed = True
 
-            return (self._flip_gravity(ExecutionFrame(AliveCode.ALIVE, coords),
-                                       self.maps.default[coords]
-                                       ), True)
+            return (
+                self._flip_gravity(
+                ExecutionFrame(AliveCode.ALIVE, coords),
+                self.maps.default[coords]
+                                       ),
+                    True
+            )
 
         elif (self.maps.default[coords] in TELEPORT and not self.teleported):
 
@@ -1363,21 +1382,29 @@ class Platformer:
 
     def _apply_gravity(self, frame):
 
-        """Brings the player down to the floor and applies gravity
-        to the player."""
+        """Runs a loop on the player's coordinates if the player is in
+        midair, bringing the player down to the ground. It decreases
+        the y-value by the gravity until the player encounters
+        a hard object (in NOT_PASSABLE) below them, where the loop then terminates.
+        """
 
+        # Variables used in the loop
         new = frame.coords.copy()
         below = new.adj("s", self.gravity)
 
         current_chr = self.maps.game[new]
         chr_below = self.maps.game[below]
 
+        # Player won or lost - do not apply gravity
         if not frame.alive.is_alive():
             return frame
 
+        # Check item collection
         self._check_item_collection(new)
 
+        # Retrieve modified frame if special character was encountered
         new_frame, changed = self._affected_frame(new)
+
         if changed:
             return new_frame
 
@@ -1386,12 +1413,14 @@ class Platformer:
 
             new.y -= self.gravity
 
+            # Update loop variables
             below = new.adj("s", self.gravity)
 
             current_chr, chr_below = self.maps.game[new], self.maps.game[below]
 
             if self.maps.game[new] == "x":
                 return ExecutionFrame(AliveCode.DEAD, new)
+
             self._check_item_collection(new)
 
             new_frame, changed = self._affected_frame(new)
@@ -1399,12 +1428,6 @@ class Platformer:
                 return new_frame
 
         return ExecutionFrame(AliveCode.ALIVE, new)
-
-    def _top_level_apply_gravity(self, frame):
-
-        frame = self._apply_gravity(frame)
-        self.gravity_changed = False
-        return frame
 
     def _new_position_helper(self, move: str, player_coords: C):
 
@@ -1698,51 +1721,42 @@ class Platformer:
         return ExecutionFrame(AliveCode.ALIVE, new)
 
     @staticmethod
-    def _gravity_affected(top_level=True):
+    def _gravity_affected(func):
 
-        def decorator(func):
+        @wraps(func)
+        def wrapper(self: Platformer, *args, **kwargs):
 
-            @wraps(func)
-            def wrapper(self: Platformer, *args, **kwargs):
+            r = func(self, *args, **kwargs)
 
-                r = func(self, *args, **kwargs)
+            if not isinstance(r, tuple):
+                raise TypeError(f"Function {func.__name__} did not return a tuple.")
 
-                if not isinstance(r, tuple):
-                    raise TypeError(f"Function {func.__name__} did not return a tuple.")
+            if len(r) != 2:
+                raise ValueError(f"Function {func.__name__} did not return a tuple of length 2.")
 
-                if len(r) != 2:
-                    raise ValueError(f"Function {func.__name__} did not return a tuple of length 2.")
+            frame, apply_grav = r
 
-                frame, apply_grav = r
-
-                if not isinstance(frame, ExecutionFrame):
-                    raise ValueError(
+            if not isinstance(frame, ExecutionFrame):
+                raise ValueError(
                         f"The first object returned by {func.__name__} is not an ExecutionFrame object."
                     )
 
-                if not isinstance(apply_grav, Gravity):
-                    raise ValueError(
-                        f"The second object returned by {func.__name__} is not a Gravity object."
+            if not isinstance(apply_grav, Gravity):
+                raise ValueError(
+                    f"The second object returned by {func.__name__} is not a Gravity object."
                     )
 
-                if apply_grav == Gravity.APPLY:
+            if apply_grav == Gravity.APPLY:
 
-                    grav = (
-                        self._top_level_apply_gravity
-                        if top_level else self._apply_gravity
-                    )
+                frame = self._apply_gravity(frame)
 
-                    frame = grav(frame)
+            frame.normalize()
 
-                frame.normalize()
+            return frame
 
-                return frame
+        return wrapper
 
-            return wrapper
-
-        return decorator
-
-    @_gravity_affected(top_level=False)
+    @_gravity_affected
     def _check_countdown_collision(self, frame):
 
         alive = frame.alive
@@ -1831,17 +1845,28 @@ class Platformer:
 
         return frame
 
-    @_gravity_affected()
     def _progress_platforms(self, frame):
 
         """The main function that handles platform generation and
         replacement. It moves all the platforms using the
         other helper functions, moving the player with it
-        if they are on top of a platform."""
+        if they are on top of a platform.
 
-        frame = self._check_platform_collision(frame)
+        Unlike the @_gravity_affected functions, this one applies gravity
+        itself, because its flip-guard reset is CONDITIONAL: it only
+        re-arms self.gravity_changed when gravity actually settles
+        (Gravity.APPLY). On a SKIP tick (player already on solid ground),
+        resetting would re-allow a second flip in the same tick and cancel
+        the first -- breaking toggles between two stacked gravity tiles."""
+
+        frame, gravity = self._check_platform_collision(frame)
         self.maps.update_platforms()
 
+        if gravity is Gravity.APPLY:
+            frame = self._apply_gravity(frame)
+            self.gravity_changed = False
+
+        frame.normalize()
         return frame
 
     def _progress_locks(self, *, only_not=False):
@@ -1864,7 +1889,7 @@ class Platformer:
 
         self.maps.update_locks(self.locks)
 
-    @_gravity_affected(top_level=False)
+    @_gravity_affected
     def _launch(self, coords):
 
         self.hidden = True
@@ -1961,7 +1986,7 @@ class Platformer:
             if display[launch_coords] in HARD:
                 launch_coords = old_coords
 
-    @_gravity_affected(top_level=False)
+    @_gravity_affected
     def _teleport(self, frame):
 
         try:
@@ -2051,7 +2076,8 @@ class Platformer:
             if changed:
                 return new_frame
 
-        frame = self._top_level_apply_gravity(frame)
+        frame = self._apply_gravity(frame)
+        self.gravity_changed = False
 
         if not frame.alive.is_alive():
             return frame
@@ -2066,8 +2092,8 @@ class Platformer:
 
         return frame
 
-    @_gravity_affected(top_level=False)
-    def _flip_gravity(self, frame, char: Literal["+", "="], func=None):
+    @_gravity_affected
+    def _flip_gravity(self, frame, char: Literal["+", "="]):
 
         self.down = False if char == "+" else True
         return frame, Gravity.APPLY

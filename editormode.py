@@ -17,8 +17,6 @@ from random import random
 from abc import ABC, abstractmethod
 from collections import deque, namedtuple
 
-Data = TypeVar("Data")
-
 class Hotkeys(dict):
 
     "Maps hotkeys to their respective characters."
