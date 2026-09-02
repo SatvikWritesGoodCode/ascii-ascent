@@ -1818,6 +1818,13 @@ class Platformer:
     @_gravity_affected
     def _check_countdown_collision(self, frame):
 
+        """(For context, this function is run AFTER the countdown
+        blocks are updated.)
+
+        This function marks a player as dead if they are in a countdown block.
+        Else, it will apply gravity onto the player if they have landed on a countdown
+        block that has since disappeared."""
+
         alive = frame.alive
 
         if self.maps.default[frame.coords] in COUNTDOWN:
