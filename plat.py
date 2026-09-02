@@ -47,8 +47,8 @@ platforms, as the checks do not update the game state.)
 
 CHARS = MapCharset("#*LlAnNX<>V^_KkHhx@SF:-|'\"?/\\`()[]{}+=$;.,123456789")
 
-HARD = MapCharset("#*LlAnNX<>V^123456789")
-NOT_PASSABLE = MapCharset("#*LlAnNX<>V^123456789_")
+HARD = MapCharset("#*LlAnNX<>V^123456789%")
+NOT_PASSABLE = MapCharset("#*LlAnNX<>V^123456789_%")
 INTERRUPT = MapCharset("x_")
 TRANSPARENT = MapCharset(" :'\"Kk?`()[]{}/\\+=$@SF;.,")
 
@@ -60,7 +60,6 @@ ARROWS = MapCharset("<>^V")
 HORIZONTAL = MapCharset("-<>")
 VERTICAL = MapCharset("|^V")
 GRAVITY = MapCharset("+=")
-STOP = MapCharset("+=")
 TELEPORT = MapCharset("()[]{}")
 PLACEABLE = CHARS - MapCharset("`")
 
@@ -1251,17 +1250,17 @@ class Platformer:
         self.checker = WinDeathChecker(self)
 
     @property
-    def gravity(self):
+    def gravity(self) -> int:
         return 1 if self.down else -1
 
     @gravity.setter
-    def gravity(self, val: int):
+    def gravity(self, val: int) -> None:
 
         if abs(val) == 1:
             self.down = bool(val + 1)
 
     @property
-    def elapsed(self):
+    def elapsed(self) -> float:
 
         if self.start_time is None:
             return -1.0
@@ -1269,16 +1268,16 @@ class Platformer:
         return perf_counter() - self.start_time
 
     @property
-    def time_surpassed(self):
+    def time_surpassed(self) -> bool:
 
         return self.elapsed > self.timelimit
 
     @property
-    def death_status(self):
+    def death_status(self) -> tuple[Status, int]:
 
         return Status(Result.NONE, float("inf")), self.jumps
 
-    def _new_move(self, move):
+    def _new_move(self, move: str) -> str:
 
         """If gravity is flipped, the controls for the player
         need to be adjusted. For example, pressing 'sd' will
@@ -1294,7 +1293,7 @@ class Platformer:
             move = move.translate(table)
             return move
 
-    def _check_item_collection(self, coords: Coordinates):
+    def _check_item_collection(self, coords: Coordinates) -> None:
 
         """
         A function that runs during every tick of the player's movement/path,
@@ -1341,13 +1340,16 @@ class Platformer:
         - Marks the player as having won if they are currently at a finish
         block
         - Flips the player's gravity and returns the gravity-affected frame
-        if the gravity has not been flipped before.
+        if the gravity has not been flipped before. *
         - Teleports the player if they are in a portal and have not been
         teleported before.
         - Launches the player if they are at a launcher block.
         - Else, it just returns the player's frame.
 
         The function also returns a boolean on whether the frame was modified by the function.
+
+        * This ensures that the player doesn't flip gravity two times during movement, preventing
+        infinite loops.
         """
 
         if self.maps.default[coords] == "F":
@@ -1380,13 +1382,16 @@ class Platformer:
 
         return ExecutionFrame(AliveCode.ALIVE, coords), False
 
-    def _apply_gravity(self, frame):
+    def _apply_gravity(self, frame: ExecutionFrame) -> ExecutionFrame:
 
         """Runs a loop on the player's coordinates if the player is in
         midair, bringing the player down to the ground. It decreases
         the y-value by the gravity until the player encounters
         a hard object (in NOT_PASSABLE) below them, where the loop then terminates.
-        """
+        It also runs _check_item_collection and _affected_frame. What this means
+        is that there are often recursive calls of _apply_gravity within itself,
+        such as when gravity gets flipped in midair. This function also returns
+        an ExecutionFrame."""
 
         # Variables used in the loop
         new = frame.coords.copy()
@@ -1408,8 +1413,12 @@ class Platformer:
         if changed:
             return new_frame
 
-        while (NOT_PASSABLE.isdisjoint(MapCharset({chr_below, current_chr})) and
-               self.maps.game._bounded(below)):
+        # Out of bounds returns NaC, which is in NOT_PASSABLE, so falling off
+        # the edge of the map terminates here without a separate bounds check.
+        while (chr_below not in NOT_PASSABLE and
+               # guards the rare "alive but embedded in a solid" case
+               # (e.g. swept into by an arrow platform)
+               current_chr not in NOT_PASSABLE):
 
             new.y -= self.gravity
 
@@ -1429,76 +1438,107 @@ class Platformer:
 
         return ExecutionFrame(AliveCode.ALIVE, new)
 
-    def _new_position_helper(self, move: str, player_coords: C):
+    def _new_position_helper(self, move: str, player_coords: C) -> ExecutionFrame:
 
-        """Finds the new position for the player without taking into
-        account the gravity or player interactions.
+        """The main movement engine of the Platformer class, along with
+        _apply_gravity. It parses the user's input and moves the player
+        up vertically before moving them to the left or right based
+        on what move they entered. It also runs _check_item_collection
+        and _affected_frame along every tick of their movement trajectory,
+        so that blocks can affect the character within midair. The completed
+        trajectory of the player (besides special cases handled by
+        _affected_frame) involves applying gravity after the initial arc
+        of the player is computed in this function.
 
-        Essentially, it moves the player up or down, and then
-        left or right."""
+        A summary of each case in the function: <COMING SOON>
+        """
 
         move = self._new_move(move)
 
+        # New coordinates to be modified
         new = player_coords.copy().as_normal()
+
+        # The player's original coordinates
         o = player_coords.copy().as_normal()
 
-        # For going down.
-        if (len(move) == 2 and "s" in move and
-                self.maps.game._bounded(new.adj("s"))):
+        # Shifts the user's coordinates down by one block
+        # if their move was of the form 'sd' or 'sa'.
+        # Then, the rest of the movement for these cases
+        # comes from horizontal shifting.
+
+        if (
+                len(move) == 2 and
+                "s" in move and
+                self.maps.game._bounded(new.adj("s", self.gravity))
+        ):
             new.y -= self.gravity
 
         match move:
 
-            case "w":
+            case "w": # Upwards movement (by 1 or 2 blocks at most)
 
+                # If you hit the ceiling, nothing happens
                 if (new.y + self.gravity) >= self.maps.game.y_len:
                     return ExecutionFrame(AliveCode.ALIVE, o)
 
                 current_chr = self.maps.game[o]
                 chr_above = self.maps.game[C(new.x, new.y + self.gravity)]
 
-                # Climbing up a ladder, move up once and stop.
+                # Moving up into a ladder (or in a ladder), move up once and stop.
                 if "_" in {current_chr, chr_above}:
                     new.y += self.gravity
                     return ExecutionFrame(AliveCode.ALIVE, new)
 
-                # Move up.
+                # Move up by move.Y while the block above is not hard
+                # (see Y constant defined at top of file)
 
-                while (chr_above not in HARD and abs((new - o).y) < self.move.Y
-                       and self.maps.game._bounded(new.adj("w", self.gravity))):
+                while (
+                        self.maps.game[new.adj("w", self.gravity)] not in HARD and
+                        abs((new - o).y) < self.move.Y
+                ):
 
                     new.y += self.gravity
 
                     if self.maps.game[new] == "x":
                         return ExecutionFrame(AliveCode.DEAD, new)
-                    elif self.maps.game[new] in STOP:
+                    elif self.maps.game[new] in GRAVITY:
+
+                        # We separate the case of a gravity block from
+                        # all the other "special" cases covered in
+                        # _affected_frame in the next few lines.
+                        # Indeed, if we exit early in this case,
+                        # _affected_frame gets run in _new_position afterward.
+                        # Notably, gravity_changed is never reset, meaning
+                        # that gravity only flips once.
+
+                        # If we handle this in the next _affected_frame
+                        # and do not exit early, the subsequent _affected_frame
+                        # does nothing, and gravity_changed is turned to False
+                        # again. This allows for double flips, which is a bug.
+                        
                         return ExecutionFrame(AliveCode.ALIVE, new)
+
                     self._check_item_collection(new)
 
                     new_frame, changed = self._affected_frame(new)
                     if changed:
                         return new_frame
 
-                    chr_above = self.maps.game[new.adj("w", self.gravity)]
-
             case "s":
 
-                # Move down.
-                if (self.maps.game[new.adj("s")] not in HARD
-                        and self.maps.game._bounded(new.adj("s"))):
+                # Move down
+                if self.maps.game[new.adj("s", self.gravity)] not in HARD:
                     new.y -= self.gravity
 
             case "a":
 
                 left = new.adj("a", self.gravity)
 
-                # Move left
+                # Move left by SLOW_X while the block to the left is not hard
+                # (see SLOW_X constant defined at the top of the file)
+
                 while (
-                        (
-                                self.maps.game[left] not in HARD
-                                or left.as_frozen() in self.stepped_on
-                        )
-                        and self.maps.game._bounded(left)
+                        self.maps.game[left] not in HARD
                         and abs((new - o).x) < SLOW_X
                 ):
 
@@ -1506,7 +1546,7 @@ class Platformer:
 
                     if self.maps.game[new] == "x":
                         return ExecutionFrame(AliveCode.DEAD, new)
-                    elif self.maps.game[new] in STOP:
+                    elif self.maps.game[new] in GRAVITY:
                         return ExecutionFrame(AliveCode.ALIVE, new)
 
                     self._check_item_collection(new)
@@ -1521,13 +1561,11 @@ class Platformer:
 
                 right = new.adj("d", self.gravity)
 
-                # Move right
+                # Move right by SLOW_X while the block to the right is not hard
+                # (see SLOW_X constant defined at the top of the file)
+
                 while (
-                        (
-                                self.maps.game[right] not in HARD
-                                or right.as_frozen() in self.stepped_on
-                        )
-                        and self.maps.game._bounded(right)
+                        self.maps.game[right] not in HARD
                         and abs((new - o).x) < SLOW_X
                 ):
 
@@ -1535,7 +1573,7 @@ class Platformer:
 
                     if self.maps.game[new] == "x":
                         return ExecutionFrame(AliveCode.DEAD, new)
-                    elif self.maps.game[new] in STOP:
+                    elif self.maps.game[new] in GRAVITY:
                         return ExecutionFrame(AliveCode.ALIVE, new)
                     self._check_item_collection(new)
 
@@ -1549,11 +1587,12 @@ class Platformer:
 
                 above = new.adj("w", self.gravity)
 
-                # Move up
+                # Move up by move.Y while the block above is not hard
+                # (see Y constant defined at top of file)
+
                 while (
                         self.maps.game[above] not in HARD
                         and abs((new - o).y) < self.move.Y
-                        and self.maps.game._bounded(above)
                 ):
 
                     new.y += self.gravity
@@ -1561,7 +1600,7 @@ class Platformer:
 
                     if self.maps.game[new] == "x":
                         return ExecutionFrame(AliveCode.DEAD, new)
-                    elif self.maps.game[new] in STOP:
+                    elif self.maps.game[new] in GRAVITY:
                         return ExecutionFrame(AliveCode.ALIVE, new)
                     self._check_item_collection(new)
 
@@ -1570,32 +1609,31 @@ class Platformer:
                         return new_frame
 
                 left = new.adj("a", self.gravity)
-                top = o.copy() + C(0, self.gravity)
-                below = new.adj("s", self.gravity)
-
                 o = new.copy()
 
-                # Move to the side
+                # Move left by FAST_X while the block to the left is not hard
+                # (see FAST_X constant defined at the top of the file)
+
                 while (
                         self.maps.game[left] not in HARD
-                        and self.maps.game._bounded(left)
                         and abs((new - o).x) < self.move.FAST_X
                 ):
 
-                    # Stop if jumping over an obstacle
-                    # that is same height as player's jump height.
+                    # In the case solid ground appears below the player,
+                    # the player has landed on something. As such, the
+                    # player will halt instead of overshooting and continuing
+                    # to move horizontally.
 
-                    if (self.maps.game[top] in HARD
-                            and self.maps.game[below] in HARD):
+                    if self.maps.game[new.adj("s", self.gravity)] in HARD:
                         break
 
                     new.x -= 1
                     left.x -= 1
-                    below.x -= 1
-                    top.x -= 1
 
                     if self.maps.game[new] == "x":
                         return ExecutionFrame(AliveCode.DEAD, new)
+                    elif self.maps.game[new] in GRAVITY:
+                        return ExecutionFrame(AliveCode.ALIVE, new)
 
                     self._check_item_collection(new)
 
@@ -1607,11 +1645,12 @@ class Platformer:
 
                 above = new.adj("w", self.gravity)
 
-                # Move up
+                # Move up by move.Y while the block above is not hard
+                # (see Y constant defined at top of file)
+
                 while (
                         self.maps.game[above] not in HARD
                         and abs((new - o).y) < self.move.Y
-                        and self.maps.game._bounded(above)
                 ):
 
                     new.y += self.gravity
@@ -1619,7 +1658,7 @@ class Platformer:
 
                     if self.maps.game[new] == "x":
                         return ExecutionFrame(AliveCode.DEAD, new)
-                    elif self.maps.game[new] in STOP:
+                    elif self.maps.game[new] in GRAVITY:
                         return ExecutionFrame(AliveCode.ALIVE, new)
                     self._check_item_collection(new)
 
@@ -1628,49 +1667,54 @@ class Platformer:
                         return new_frame
 
                 right = new.adj("d", self.gravity)
-                top = o.copy() + C(0, self.gravity)
-                below = new.adj("s", self.gravity)
 
                 o = new.copy()
 
-                # Move to the side
+                # Move right by FAST_X while the block to the right is not hard
+                # (see FAST_X constant defined at the top of the file)
+
                 while (
                         self.maps.game[right] not in HARD
-                        and self.maps.game._bounded(right)
                         and abs((new - o).x) < self.move.FAST_X
                 ):
 
-                    # Stop if jumping over an obstacle
-                    # that is same height as player's jump height.
+                    # In the case solid ground appears below the player,
+                    # the player has landed on something. As such, the
+                    # player will halt instead of overshooting and continuing
+                    # to move horizontally.
 
-                    if (self.maps.game[top] in HARD
-                            and self.maps.game[below] in HARD):
+                    if self.maps.game[new.adj("s", self.gravity)] in HARD:
                         break
 
                     new.x += 1
                     right.x += 1
-                    below.x += 1
-                    top.x += 1
 
                     if self.maps.game[new] == "x":
                         return ExecutionFrame(AliveCode.DEAD, new)
+                    elif self.maps.game[new] in GRAVITY:
+                        return ExecutionFrame(AliveCode.ALIVE, new)
+
                     self._check_item_collection(new)
 
                     new_frame, changed = self._affected_frame(new)
                     if changed:
                         return new_frame
 
+            # Note that vertical movement downward for cases 'as'
+            # and 'ds' were covered at the beginning of this method.
+            # This allows us to consolidate "as" and "aa",
+            # as well as "ds" and "dd" as both now only cover
+            # fast horizontal movement.
+
             case "as" | "sa" | "aa" | "a'" | "'a'":
 
                 left = new.adj("a", self.gravity)
 
-                # Move left
+                # Move left by move.FAST_X while the block to the left is not hard
+                # (see FAST_X constant defined at the top of the file)
+
                 while (
-                        (
-                                self.maps.game[left] not in HARD
-                                or left.as_frozen() in self.stepped_on
-                        )
-                        and self.maps.game._bounded(left)
+                        self.maps.game[left] not in HARD
                         and abs((new - o).x) < self.move.FAST_X
                 ):
 
@@ -1678,7 +1722,7 @@ class Platformer:
 
                     if self.maps.game[new] == "x":
                         return ExecutionFrame(AliveCode.DEAD, new)
-                    elif self.maps.game[new] in STOP:
+                    elif self.maps.game[new] in GRAVITY:
                         return ExecutionFrame(AliveCode.ALIVE, new)
 
                     self._check_item_collection(new)
@@ -1693,13 +1737,11 @@ class Platformer:
 
                 right = new.adj("d", self.gravity)
 
-                # Move right
+                # Move right by move.FAST_X while the block to the right is not hard
+                # (see FAST_X constant defined at the top of the file)
+
                 while (
-                        (
-                                self.maps.game[right] not in HARD
-                                or right.as_frozen() in self.stepped_on
-                        )
-                        and self.maps.game._bounded(right)
+                        self.maps.game[right] not in HARD
                         and abs((new - o).x) < self.move.FAST_X
                 ):
 
@@ -1707,7 +1749,7 @@ class Platformer:
 
                     if self.maps.game[new] == "x":
                         return ExecutionFrame(AliveCode.DEAD, new)
-                    elif self.maps.game[new] in STOP:
+                    elif self.maps.game[new] in GRAVITY:
                         return ExecutionFrame(AliveCode.ALIVE, new)
 
                     self._check_item_collection(new)
@@ -1718,6 +1760,7 @@ class Platformer:
 
                     right = new.adj("d", self.gravity)
 
+        # Return the new coordinates
         return ExecutionFrame(AliveCode.ALIVE, new)
 
     @staticmethod
@@ -1748,6 +1791,14 @@ class Platformer:
 
             if apply_grav == Gravity.APPLY:
 
+                # NOTE: deliberately does NOT re-arm self.gravity_changed.
+                # These functions (_flip_gravity, _teleport, _launch,
+                # _check_countdown_collision) fire mid-motion, not on arrival
+                # at a stable resting state -- and _flip_gravity's is a
+                # recursive call from inside _apply_gravity. Re-arming here
+                # would let the player flip again mid-fall (infinite
+                # ping-pong). Only _new_position and _progress_platforms,
+                # which end at a genuine resting state, reset the guard.
                 frame = self._apply_gravity(frame)
 
             frame.normalize()
@@ -1813,9 +1864,22 @@ class Platformer:
                     coords.y -= self.gravity
 
                 # All other conditions from here mean the icon
-                # is still moving
+                # is still moving upward.
 
-                # Crash into the top of the map. Icon disappears.
+                # The following two cases are really the same;
+                # they differ only in visual presentation.
+                # When a player crashes into the ceiling,
+                # the visual effect is the player being crushed into
+                # the ceiling or being moved "outside" the map.
+                # When a player crashes into a block,
+                # the player can still be seen and is not hidden.
+
+                # NOTE: these cases could be unified if we accept
+                # that a player's coordinates can go outside the
+                # map. But this is not worth it as it is nice
+                # to know for a fact that in this game,
+                # a player's coordinates are in the bounds.
+                # Breaking such an invariance is not a good idea.
 
                 elif not self.maps.game._bounded(adj("w")):
 
@@ -1852,12 +1916,20 @@ class Platformer:
         other helper functions, moving the player with it
         if they are on top of a platform.
 
-        Unlike the @_gravity_affected functions, this one applies gravity
-        itself, because its flip-guard reset is CONDITIONAL: it only
-        re-arms self.gravity_changed when gravity actually settles
-        (Gravity.APPLY). On a SKIP tick (player already on solid ground),
-        resetting would re-allow a second flip in the same tick and cancel
-        the first -- breaking toggles between two stacked gravity tiles."""
+        THE INVARIANT (why this applies gravity itself instead of using
+        @_gravity_affected): self.gravity_changed is re-armed only when the
+        player has just ARRIVED AT A NEW STABLE RESTING STATE. Standing
+        still does not earn you another flip.
+
+        - Gravity.APPLY: platforms moved the player and gravity settled
+          them somewhere new -> new stable state -> re-arm.
+        - Gravity.SKIP: nothing happened; the player was already stable and
+          never moved -> no new arrival -> do NOT re-arm.
+
+        Re-arming on SKIP hands out a flip the player never earned, so the
+        post-platform _affected_frame fires a second flip in the same tick
+        that cancels the first -- which breaks toggling between two stacked
+        gravity tiles (the tile appears to do nothing)."""
 
         frame, gravity = self._check_platform_collision(frame)
         self.maps.update_platforms()
@@ -2077,6 +2149,11 @@ class Platformer:
                 return new_frame
 
         frame = self._apply_gravity(frame)
+
+        # Gravity always settles the player here, so they have always just
+        # arrived at a new stable resting state -> unconditionally re-arm the
+        # flip guard. (Contrast _progress_platforms, whose settle is
+        # conditional, so its reset is too.)
         self.gravity_changed = False
 
         if not frame.alive.is_alive():
