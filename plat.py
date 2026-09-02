@@ -1766,11 +1766,27 @@ class Platformer:
     @staticmethod
     def _gravity_affected(func):
 
+        """This convenient decorator essentially applies gravity to the result of a function.
+        This is really useful because often after an operation on the player's coordinates,
+        we need to bring the user to a stable state and apply gravity before we use the
+        result of this function.
+
+        To use _gravity_affected, the function being decorated must have a specific
+        return type: tuple[ExecutionFrame, Gravity]. (Validating this takes up
+        most of the code of the wrapper function.) Only if the Gravity enum is set
+        to APPLY will gravity be applied onto the execution frame. This allows
+        the decorated function to precisely control when gravity is applied to its
+        return value.
+
+        Another implementation detail is that the frame returned by a decorated function
+        always uses normal coordinates."""
+
         @wraps(func)
         def wrapper(self: Platformer, *args, **kwargs):
 
             r = func(self, *args, **kwargs)
 
+            # All of this validates the return type to be of the form tuple[ExecutionFrame, Gravity]
             if not isinstance(r, tuple):
                 raise TypeError(f"Function {func.__name__} did not return a tuple.")
 
@@ -1790,17 +1806,9 @@ class Platformer:
                     )
 
             if apply_grav == Gravity.APPLY:
-
-                # NOTE: deliberately does NOT re-arm self.gravity_changed.
-                # These functions (_flip_gravity, _teleport, _launch,
-                # _check_countdown_collision) fire mid-motion, not on arrival
-                # at a stable resting state -- and _flip_gravity's is a
-                # recursive call from inside _apply_gravity. Re-arming here
-                # would let the player flip again mid-fall (infinite
-                # ping-pong). Only _new_position and _progress_platforms,
-                # which end at a genuine resting state, reset the guard.
                 frame = self._apply_gravity(frame)
 
+            # Convert the frame to normal coordinates (just to be sure)
             frame.normalize()
 
             return frame
