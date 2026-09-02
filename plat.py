@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal, Optional, Callable
 from collections.abc import Iterable
 from clear import clear
 from time import perf_counter, sleep
@@ -178,16 +178,6 @@ class AliveCode(Enum):
         when the player is alive or dead."""
 
         return self.value == 2
-
-class Gravity(Enum):
-
-    """Used with the _gravity_affected decorator.
-    Signals whether to apply gravity after the function returns
-    or whether to skip. This allows for precise control
-    of how the _gravity_affected decorator acts."""
-
-    APPLY = auto()
-    SKIP = auto()
 
 class Asterisks(set):
 
@@ -1448,10 +1438,7 @@ class Platformer:
         so that blocks can affect the character within midair. The completed
         trajectory of the player (besides special cases handled by
         _affected_frame) involves applying gravity after the initial arc
-        of the player is computed in this function.
-
-        A summary of each case in the function: <COMING SOON>
-        """
+        of the player is computed in this function."""
 
         move = self._new_move(move)
 
@@ -1764,19 +1751,16 @@ class Platformer:
         return ExecutionFrame(AliveCode.ALIVE, new)
 
     @staticmethod
-    def _gravity_affected(func):
+    def _gravity_affected(func) -> Callable:
 
         """This convenient decorator essentially applies gravity to the result of a function.
         This is really useful because often after an operation on the player's coordinates,
         we need to bring the user to a stable state and apply gravity before we use the
         result of this function.
 
-        To use _gravity_affected, the function being decorated must have a specific
-        return type: tuple[ExecutionFrame, Gravity]. (Validating this takes up
-        most of the code of the wrapper function.) Only if the Gravity enum is set
-        to APPLY will gravity be applied onto the execution frame. This allows
-        the decorated function to precisely control when gravity is applied to its
-        return value.
+        To use _gravity_affected, the function being decorated must return an
+        ExecutionFrame, which is validated below. Gravity is then applied to it
+        unconditionally.
 
         Another implementation detail is that the frame returned by a decorated function
         always uses normal coordinates."""
@@ -1784,29 +1768,21 @@ class Platformer:
         @wraps(func)
         def wrapper(self: Platformer, *args, **kwargs):
 
-            r = func(self, *args, **kwargs)
-
-            # All of this validates the return type to be of the form tuple[ExecutionFrame, Gravity]
-            if not isinstance(r, tuple):
-                raise TypeError(f"Function {func.__name__} did not return a tuple.")
-
-            if len(r) != 2:
-                raise ValueError(f"Function {func.__name__} did not return a tuple of length 2.")
-
-            frame, apply_grav = r
+            frame = func(self, *args, **kwargs)
 
             if not isinstance(frame, ExecutionFrame):
-                raise ValueError(
-                        f"The first object returned by {func.__name__} is not an ExecutionFrame object."
-                    )
+                raise TypeError(
+                    f"Function {func.__name__} did not return an ExecutionFrame object."
+                )
 
-            if not isinstance(apply_grav, Gravity):
-                raise ValueError(
-                    f"The second object returned by {func.__name__} is not a Gravity object."
-                    )
-
-            if apply_grav == Gravity.APPLY:
-                frame = self._apply_gravity(frame)
+            # NOTE: deliberately does NOT re-arm self.gravity_changed. These
+            # functions fire mid-motion, not on arrival at a stable resting
+            # state -- and _flip_gravity's call is recursive, from inside
+            # _apply_gravity. Re-arming here would let the player flip again
+            # mid-fall (infinite ping-pong). Only _new_position and
+            # _progress_platforms, which end at a genuine resting state,
+            # reset the guard.
+            frame = self._apply_gravity(frame)
 
             # Convert the frame to normal coordinates (just to be sure)
             frame.normalize()
@@ -1816,13 +1792,13 @@ class Platformer:
         return wrapper
 
     @_gravity_affected
-    def _check_countdown_collision(self, frame):
+    def _check_countdown_collision(self, frame: ExecutionFrame) -> ExecutionFrame:
 
-        """(For context, this function is run AFTER the countdown
+        """(For context, this function runs AFTER the countdown
         blocks are updated.)
 
         This function marks a player as dead if they are in a countdown block.
-        Else, it will apply gravity onto the player if they have landed on a countdown
+        It will also apply gravity onto the player if they have landed on a countdown
         block that has since disappeared."""
 
         alive = frame.alive
@@ -1831,47 +1807,71 @@ class Platformer:
 
             alive = AliveCode.DEAD
 
-        return ExecutionFrame(alive, frame.coords), Gravity.APPLY
+        return ExecutionFrame(alive, frame.coords)
 
-    def _check_platform_collision(self, frame):
+    def _progress_countdown(self, frame: ExecutionFrame) -> ExecutionFrame:
+
+        """Performs all operations related to countdown blocks, namely
+        updating the countdown blocks on the map and updating
+        the player state."""
+
+        self.maps.update_countdown_blocks()
+        frame = self._check_countdown_collision(frame)
+
+        return frame
+
+    def _check_platform_collision(self, frame: ExecutionFrame):
+
+        """This function handles the complex interaction between the player's
+        coordinates and the platforms. It handles the cases for
+        horizontal arrows, 'conveying' the player to the right place.
+        For down arrows, it takes the player down one character.
+
+        For up arrows, the behavior is more complicated. If the player crashes
+        into the ceiling or into a hard block, they are dead. (These are handled as
+        separate cases due to visual differences; read the comments left
+        for this case.) Else, the player moves up as usual."""
 
         coords = frame.coords.as_normal()
+        alive_code = AliveCode.ALIVE
 
+        # Makes the following code more concise
         adj = partial(coords.adj, g=self.gravity)
 
-        coord_under = self.maps.game[adj("s")]
-
-        # A bunch of coords to make comparisons cleaner.
-        coord_left = self.maps.game[adj("sa")]
-        coord_right = self.maps.game[adj("sd")]
-        coord_dunder = self.maps.game[adj("ss")]
-        coord_above = self.maps.default[adj("w")]
-
+        # A bunch of characters to make comparisons cleaner.
         current = self.maps.default[coords]
+        char_above = self.maps.default[adj("w")]
+        char_under = self.maps.game[adj("s")]
+        char_dunder = self.maps.game[adj("ss")]
+        char_left = self.maps.game[adj("sa")] # Character to the southwest
+        char_right = self.maps.game[adj("sd")] # Character to the southeast
 
-        dead = AliveCode.ALIVE
-
+        # A bunch of sets of characters to make comparisons cleaner.
         ARROWS, BELTS = MapCharset("V^<>"), MapCharset("|-")
         HARD_NO_ARROWS = (HARD - ARROWS) | MapCharset("x")
-
         TRANSPARENT_WITH_ARROWS = TRANSPARENT | ARROWS | BELTS | MapCharset("_")
-        g1 = "V" if self.down else "^"
-        g2 = "^" if self.down else "V"
 
-        apply_grav = Gravity.APPLY
+        # Down and up arrows relative to gravity
+        down_arrow = "V" if self.down else "^"
+        up_arrow = "^" if self.down else "V"
 
-        g = self.gravity if coord_dunder in "|V^" else -self.gravity
+        # moved is True when a platform moved the player, requiring another
+        # application of gravity and setting gravity_changed back to False.
+        moved = True
 
-        match coord_under:
+        match char_under:
+
+            # The ternary statements in this piece of code are to judge
+            # whether a belt will continue in a given direction or turn around.
 
             case "<":
-                coords.x -= 1 if coord_left in "-<>" else -1
+                coords.x -= 1 if char_left in HORIZONTAL else -1
             case ">":
-                coords.x += 1 if coord_right in "-<>" else -1
-            case i if i == g1:
-                coords.y -= g
+                coords.x += 1 if char_right in HORIZONTAL else -1
+            case i if i == down_arrow:
+                coords.y -= self.gravity if char_dunder in VERTICAL else -self.gravity
 
-            case i if i == g2 and current != "_":
+            case i if i == up_arrow and current != "_":
 
                 # Reached the top of the platform belt.
 
@@ -1899,30 +1899,34 @@ class Platformer:
                 elif not self.maps.game._bounded(adj("w")):
 
                     self.maps.both[coords] = "|"
-                    dead = AliveCode.DEAD
+                    alive_code = AliveCode.DEAD
                     self.hidden = True
 
-                elif coord_above in HARD_NO_ARROWS:
+                elif char_above in HARD_NO_ARROWS:
 
                     coords.y += self.gravity
-                    dead = AliveCode.DEAD
+                    alive_code = AliveCode.DEAD
 
-                elif coord_above in TRANSPARENT_WITH_ARROWS:
+                elif char_above in TRANSPARENT_WITH_ARROWS:
 
                     # Move up: upper character is not hard.
                     coords.y += self.gravity
 
             case _:
-                apply_grav = Gravity.SKIP
 
-        return ExecutionFrame(dead, coords), apply_grav
+                # This occurs when the player is not above an arrow,
+                # and as such, does not move.
+                # Also, another case is where the character below is an
+                # up arrow and the character that is currently in the
+                # player's place is a ladder '_'.
 
-    def _progress_countdown(self, frame):
+                # This means that the platform ends at this point, but
+                # the player 'sticks' or 'holds on' to the ladder.
+                # This means the player does not move.
 
-        self.maps.update_countdown_blocks()
-        frame = self._check_countdown_collision(frame)
+                moved = False
 
-        return frame
+        return ExecutionFrame(alive_code, coords), moved
 
     def _progress_platforms(self, frame):
 
@@ -1931,35 +1935,27 @@ class Platformer:
         other helper functions, moving the player with it
         if they are on top of a platform.
 
-        THE INVARIANT (why this applies gravity itself instead of using
-        @_gravity_affected): self.gravity_changed is re-armed only when the
-        player has just ARRIVED AT A NEW STABLE RESTING STATE. Standing
-        still does not earn you another flip.
+        This function does not use _gravity_affected, as it
+        uses more precise control on gravity. If the player
+        moved, we apply gravity and set gravity_changed back
+        to False, allowing for flipping. Else, we
+        do not allow the player to flip again."""
 
-        - Gravity.APPLY: platforms moved the player and gravity settled
-          them somewhere new -> new stable state -> re-arm.
-        - Gravity.SKIP: nothing happened; the player was already stable and
-          never moved -> no new arrival -> do NOT re-arm.
-
-        Re-arming on SKIP hands out a flip the player never earned, so the
-        post-platform _affected_frame fires a second flip in the same tick
-        that cancels the first -- which breaks toggling between two stacked
-        gravity tiles (the tile appears to do nothing)."""
-
-        frame, gravity = self._check_platform_collision(frame)
+        frame, moved = self._check_platform_collision(frame)
         self.maps.update_platforms()
 
-        if gravity is Gravity.APPLY:
+        if moved:
             frame = self._apply_gravity(frame)
             self.gravity_changed = False
 
         frame.normalize()
         return frame
 
-    def _progress_locks(self, *, only_not=False):
+    def _progress_locks(self, *, only_not: bool=False):
 
-        """Handles removing the locks in the grid if
-        a key was collected."""
+        """After the player's keys have changed,
+        _progress_locks updates the locks based
+        on the new boolean values."""
 
         for i, lock, not_lock in zip("kK", "lL", "nN"):
 
@@ -2064,7 +2060,7 @@ class Platformer:
                     frame = self._new_position_helper(launch_move, coords)
                     self.move = move
 
-                    return frame, Gravity.APPLY
+                    return frame
 
             # Bound coords
             launch_coords.x = max(min(launch_coords.x, upper_x), lower_x)
@@ -2079,13 +2075,13 @@ class Platformer:
         try:
             possible_coords = self.portals[frame.coords]
         except KeyError:
-            return ExecutionFrame(AliveCode.ALIVE, frame.coords), Gravity.APPLY
+            return ExecutionFrame(AliveCode.ALIVE, frame.coords)
 
         num_found = len(possible_coords)
 
         if num_found == 1:
             return ExecutionFrame(AliveCode.ALIVE,
-                                  possible_coords[0].as_normal()), Gravity.APPLY
+                                  possible_coords[0].as_normal())
         else:
 
             possible_coords_x = sorted(possible_coords,
@@ -2133,7 +2129,7 @@ class Platformer:
                         self.maps.both.patch(frame.coords)
                         clear()
                         self.hidden = False
-                        return ExecutionFrame(AliveCode.ALIVE, c), Gravity.APPLY
+                        return ExecutionFrame(AliveCode.ALIVE, c)
 
                 current_ind_x %= num_found
                 current_ind_y %= num_found
@@ -2188,7 +2184,7 @@ class Platformer:
     def _flip_gravity(self, frame, char: Literal["+", "="]):
 
         self.down = False if char == "+" else True
-        return frame, Gravity.APPLY
+        return frame
 
     def _progress_helper(self, move: str) -> ExecutionFrame:
 
