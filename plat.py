@@ -1951,21 +1951,18 @@ class Platformer:
         frame.normalize()
         return frame
 
-    def _progress_locks(self, *, only_not: bool=False):
+    def _progress_locks(self) -> None:
 
         """After the player's keys have changed,
         _progress_locks updates the locks based
-        on the new boolean values."""
+        on the new boolean values. This function is called
+        in _check_item_collection() whenever a key is collected
+        (or lost)."""
 
         for i, lock, not_lock in zip("kK", "lL", "nN"):
 
-            if only_not is False:
-                self.locks.edit(lock, self.keys.get_char(i))
-
+            self.locks.edit(lock, self.keys.get_char(i))
             self.locks.edit(not_lock, not self.keys.get_char(i))
-
-        if only_not:
-            return
 
         self.locks.edit("A", all(self.keys))
         self.locks.edit("X", self.keys.k != self.keys.K)
