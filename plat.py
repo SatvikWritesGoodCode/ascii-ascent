@@ -1759,8 +1759,8 @@ class Platformer:
         result of this function.
 
         To use _gravity_affected, the function being decorated must return an
-        ExecutionFrame, which is validated below. Gravity is then applied to it
-        unconditionally.
+        ExecutionFrame, which is validated below. Gravity is then applied to the resulting
+        frame.
 
         Another implementation detail is that the frame returned by a decorated function
         always uses normal coordinates."""
@@ -1775,13 +1775,6 @@ class Platformer:
                     f"Function {func.__name__} did not return an ExecutionFrame object."
                 )
 
-            # NOTE: deliberately does NOT re-arm self.gravity_changed. These
-            # functions fire mid-motion, not on arrival at a stable resting
-            # state -- and _flip_gravity's call is recursive, from inside
-            # _apply_gravity. Re-arming here would let the player flip again
-            # mid-fall (infinite ping-pong). Only _new_position and
-            # _progress_platforms, which end at a genuine resting state,
-            # reset the guard.
             frame = self._apply_gravity(frame)
 
             # Convert the frame to normal coordinates (just to be sure)
