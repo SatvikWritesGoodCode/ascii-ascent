@@ -1431,6 +1431,43 @@ class Platformer:
 
         return ExecutionFrame(AliveCode.ALIVE, new)
 
+    def _enter(self, cell: C) -> ExecutionFrame | None:
+
+        """A helper function for _new_position_helper that does everything
+         that needs to be done when a cell is entered in the loop. This includes
+         checking item collection, running _affected_frame to handle special
+         blocks along the way, and marking the player as dead if they run into
+         a spike.
+
+         This function can return either an ExecutionFrame or None. If a
+         frame is returned, this frame is the player's final position for
+         _new_position_helper. Else, _new_position_helper continues."""
+
+        if self.maps.game[cell] == "x":
+            return ExecutionFrame(AliveCode.DEAD, cell)
+        elif self.maps.game[cell] in GRAVITY:
+
+            # We separate the case of a gravity block from
+            # all the other "special" cases covered in
+            # _affected_frame in the next few lines.
+            # Indeed, if we exit early in this case,
+            # _affected_frame gets run in _new_position afterward.
+            # Notably, gravity_changed is never reset, meaning
+            # that gravity only flips once.
+
+            # If we handle this in the next _affected_frame
+            # and do not exit early, the subsequent _affected_frame
+            # does nothing, and gravity_changed is turned to False
+            # again. This allows for double flips, which is a bug.
+
+            return ExecutionFrame(AliveCode.ALIVE, cell)
+
+        self._check_item_collection(cell)
+
+        new_frame, changed = self._affected_frame(cell)
+        if changed:
+            return new_frame
+
     def _new_position_helper(self, move: str, player_coords: C) -> ExecutionFrame:
 
         """The main movement engine of the Platformer class, along with
@@ -1441,7 +1478,10 @@ class Platformer:
         so that blocks can affect the character within midair. The completed
         trajectory of the player (besides special cases handled by
         _affected_frame) involves applying gravity after the initial arc
-        of the player is computed in this function."""
+        of the player is computed in this function.
+
+        Something worth noticing is that _new_position_helper never checks
+        the first cell. However, it always checks the last cell."""
 
         move = self._new_move(move)
 
@@ -1463,20 +1503,24 @@ class Platformer:
         ):
             new.y -= self.gravity
 
+            if (frame := self._enter(new)) is not None:
+                return frame
+
         match move:
 
             case "w": # Upwards movement (by 1 or 2 blocks at most)
-
-                # If you hit the ceiling, nothing happens
-                if (new.y + self.gravity) >= self.maps.game.y_len:
-                    return ExecutionFrame(AliveCode.ALIVE, o)
 
                 current_chr = self.maps.game[o]
                 chr_above = self.maps.game[C(new.x, new.y + self.gravity)]
 
                 # Moving up into a ladder (or in a ladder), move up once and stop.
                 if "_" in {current_chr, chr_above}:
+
                     new.y += self.gravity
+
+                    if (frame := self._enter(new)) is not None:
+                        return frame
+
                     return ExecutionFrame(AliveCode.ALIVE, new)
 
                 # Move up by move.Y while the block above is not hard
@@ -1489,36 +1533,18 @@ class Platformer:
 
                     new.y += self.gravity
 
-                    if self.maps.game[new] == "x":
-                        return ExecutionFrame(AliveCode.DEAD, new)
-                    elif self.maps.game[new] in GRAVITY:
-
-                        # We separate the case of a gravity block from
-                        # all the other "special" cases covered in
-                        # _affected_frame in the next few lines.
-                        # Indeed, if we exit early in this case,
-                        # _affected_frame gets run in _new_position afterward.
-                        # Notably, gravity_changed is never reset, meaning
-                        # that gravity only flips once.
-
-                        # If we handle this in the next _affected_frame
-                        # and do not exit early, the subsequent _affected_frame
-                        # does nothing, and gravity_changed is turned to False
-                        # again. This allows for double flips, which is a bug.
-                        
-                        return ExecutionFrame(AliveCode.ALIVE, new)
-
-                    self._check_item_collection(new)
-
-                    new_frame, changed = self._affected_frame(new)
-                    if changed:
-                        return new_frame
+                    # Just added
+                    if (frame := self._enter(new)) is not None:
+                        return frame
 
             case "s":
 
                 # Move down
                 if self.maps.game[new.adj("s", self.gravity)] not in HARD:
                     new.y -= self.gravity
+
+                    if (frame := self._enter(new)) is not None:
+                        return frame
 
             case "a":
 
@@ -1534,16 +1560,8 @@ class Platformer:
 
                     new.x -= 1
 
-                    if self.maps.game[new] == "x":
-                        return ExecutionFrame(AliveCode.DEAD, new)
-                    elif self.maps.game[new] in GRAVITY:
-                        return ExecutionFrame(AliveCode.ALIVE, new)
-
-                    self._check_item_collection(new)
-
-                    new_frame, changed = self._affected_frame(new)
-                    if changed:
-                        return new_frame
+                    if (frame := self._enter(new)) is not None:
+                        return frame
 
                     left = new.adj("a", self.gravity)
 
@@ -1561,15 +1579,8 @@ class Platformer:
 
                     new.x += 1
 
-                    if self.maps.game[new] == "x":
-                        return ExecutionFrame(AliveCode.DEAD, new)
-                    elif self.maps.game[new] in GRAVITY:
-                        return ExecutionFrame(AliveCode.ALIVE, new)
-                    self._check_item_collection(new)
-
-                    new_frame, changed = self._affected_frame(new)
-                    if changed:
-                        return new_frame
+                    if (frame := self._enter(new)) is not None:
+                        return frame
 
                     right = new.adj("d", self.gravity)
 
@@ -1588,15 +1599,8 @@ class Platformer:
                     new.y += self.gravity
                     above.y += self.gravity
 
-                    if self.maps.game[new] == "x":
-                        return ExecutionFrame(AliveCode.DEAD, new)
-                    elif self.maps.game[new] in GRAVITY:
-                        return ExecutionFrame(AliveCode.ALIVE, new)
-                    self._check_item_collection(new)
-
-                    new_frame, changed = self._affected_frame(new)
-                    if changed:
-                        return new_frame
+                    if (frame := self._enter(new)) is not None:
+                        return frame
 
                 left = new.adj("a", self.gravity)
 
@@ -1621,16 +1625,8 @@ class Platformer:
                     new.x -= 1
                     left.x -= 1
 
-                    if self.maps.game[new] == "x":
-                        return ExecutionFrame(AliveCode.DEAD, new)
-                    elif self.maps.game[new] in GRAVITY:
-                        return ExecutionFrame(AliveCode.ALIVE, new)
-
-                    self._check_item_collection(new)
-
-                    new_frame, changed = self._affected_frame(new)
-                    if changed:
-                        return new_frame
+                    if (frame := self._enter(new)) is not None:
+                        return frame
 
             case "dw" | "wd":
 
@@ -1647,15 +1643,8 @@ class Platformer:
                     new.y += self.gravity
                     above.y += self.gravity
 
-                    if self.maps.game[new] == "x":
-                        return ExecutionFrame(AliveCode.DEAD, new)
-                    elif self.maps.game[new] in GRAVITY:
-                        return ExecutionFrame(AliveCode.ALIVE, new)
-                    self._check_item_collection(new)
-
-                    new_frame, changed = self._affected_frame(new)
-                    if changed:
-                        return new_frame
+                    if (frame := self._enter(new)) is not None:
+                        return frame
 
                 right = new.adj("d", self.gravity)
 
@@ -1680,16 +1669,8 @@ class Platformer:
                     new.x += 1
                     right.x += 1
 
-                    if self.maps.game[new] == "x":
-                        return ExecutionFrame(AliveCode.DEAD, new)
-                    elif self.maps.game[new] in GRAVITY:
-                        return ExecutionFrame(AliveCode.ALIVE, new)
-
-                    self._check_item_collection(new)
-
-                    new_frame, changed = self._affected_frame(new)
-                    if changed:
-                        return new_frame
+                    if (frame := self._enter(new)) is not None:
+                        return frame
 
             # Note that vertical movement downward for cases 'as'
             # and 'ds' were covered at the beginning of this method.
@@ -1711,16 +1692,8 @@ class Platformer:
 
                     new.x -= 1
 
-                    if self.maps.game[new] == "x":
-                        return ExecutionFrame(AliveCode.DEAD, new)
-                    elif self.maps.game[new] in GRAVITY:
-                        return ExecutionFrame(AliveCode.ALIVE, new)
-
-                    self._check_item_collection(new)
-
-                    new_frame, changed = self._affected_frame(new)
-                    if changed:
-                        return new_frame
+                    if (frame := self._enter(new)) is not None:
+                        return frame
 
                     left = new.adj("a", self.gravity)
 
@@ -1738,16 +1711,8 @@ class Platformer:
 
                     new.x += 1
 
-                    if self.maps.game[new] == "x":
-                        return ExecutionFrame(AliveCode.DEAD, new)
-                    elif self.maps.game[new] in GRAVITY:
-                        return ExecutionFrame(AliveCode.ALIVE, new)
-
-                    self._check_item_collection(new)
-
-                    new_frame, changed = self._affected_frame(new)
-                    if changed:
-                        return new_frame
+                    if (frame := self._enter(new)) is not None:
+                        return frame
 
                     right = new.adj("d", self.gravity)
 
@@ -2200,51 +2165,47 @@ class Platformer:
                         clear()
                         return ExecutionFrame(AliveCode.ALIVE, portal_coord)
 
-    def _new_position(self, move: str):
+    def _new_position(self, move: str) -> ExecutionFrame:
 
-        """Finds the new position for the player."""
+        """Finds the new position for the player, given their current coordinates
+        and the move they made. Firstly, we run _new_position_helper to get
+        the initial frame based on the player's current coordinates, running
+        the move they made."""
 
-        frame = ExecutionFrame(AliveCode.ALIVE, self.frame.coords)
+        # Starting frame
+        new_frame = self._new_position_helper(move, self.frame.coords.copy())
 
-        if not frame.alive.is_alive():
-            return frame
+        # Player is dead or has won: return
+        if not new_frame.alive.is_alive():
+            return new_frame
 
-        if self._check_item_collection(frame.coords):
-            return ExecutionFrame(AliveCode.WON, frame.coords)
+        # Even though _new_position_helper already runs _affected_frame
+        # on the last cell, there is an exception.
+        # In _new_position_helper, gravity portals get rerouted
+        # to be handled properly here. (Read the comment in _enter).
 
-        frame = self._new_position_helper(move, self.frame.coords.copy())
+        new_frame, changed = self._affected_frame(new_frame.coords)
 
-        if not frame.alive.is_alive():
-            return frame
+        if changed:
 
-        if self._check_item_collection(frame.coords):
-            return ExecutionFrame(AliveCode.WON, frame.coords)
-        else:
+            # Prevents gravity_changed from being reset, causing
+            # double flips (a bug).
 
-            new_frame, changed = self._affected_frame(frame.coords)
-            if changed:
-                return new_frame
+            return new_frame
 
-        frame = self._apply_gravity(frame)
+        new_frame = self._apply_gravity(new_frame)
 
-        # Gravity always settles the player here, so they have always just
-        # arrived at a new stable resting state -> unconditionally re-arm the
-        # flip guard. (Contrast _progress_platforms, whose settle is
-        # conditional, so its reset is too.)
+        # Player is dead or has won: return
+        if not new_frame.alive.is_alive():
+            return new_frame
+
+        # _apply_gravity always settles the player down to the ground.
+        # Since we have settled the case of double flips, we are able
+        # to flip back gravity_changed safely.
+
         self.gravity_changed = False
 
-        if not frame.alive.is_alive():
-            return frame
-
-        if self._check_item_collection(frame.coords):
-            return ExecutionFrame(AliveCode.WON, frame.coords)
-        else:
-
-            new_frame, changed = self._affected_frame(frame.coords)
-            if changed:
-                return new_frame
-
-        return frame
+        return new_frame
 
     @_gravity_affected
     def _flip_gravity(self, frame, char: Literal["+", "="]):
