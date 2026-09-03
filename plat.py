@@ -1364,15 +1364,14 @@ class Platformer:
                     True
             )
 
-        elif (self.maps.default[coords] in TELEPORT and not self.teleported):
+        if self.maps.default[coords] in TELEPORT and not self.teleported:
 
             self.teleported = True
-            return (self._teleport(ExecutionFrame(AliveCode.ALIVE, coords)),
-                    True)
+            return self._teleport(coords), True
 
-        elif (self.maps.default[coords] == "$"):
+        if self.maps.default[coords] == "$":
 
-            return (self._launch(coords), True)
+            return self._launch(coords), True
 
         return ExecutionFrame(AliveCode.ALIVE, coords), False
 
@@ -1600,6 +1599,7 @@ class Platformer:
                         return new_frame
 
                 left = new.adj("a", self.gravity)
+
                 o = new.copy()
 
                 # Move left by FAST_X while the block to the left is not hard
@@ -1615,7 +1615,7 @@ class Platformer:
                     # player will halt instead of overshooting and continuing
                     # to move horizontally.
 
-                    if self.maps.game[new.adj("s", self.gravity)] in HARD:
+                    if self.maps.game[new.adj("s", self.gravity)] in HARD and self.move.Y > 0:
                         break
 
                     new.x -= 1
@@ -1674,7 +1674,7 @@ class Platformer:
                     # player will halt instead of overshooting and continuing
                     # to move horizontally.
 
-                    if self.maps.game[new.adj("s", self.gravity)] in HARD:
+                    if self.maps.game[new.adj("s", self.gravity)] in HARD and self.move.Y > 0:
                         break
 
                     new.x += 1
@@ -1778,6 +1778,8 @@ class Platformer:
                 raise TypeError(
                     f"Function {func.__name__} did not return an ExecutionFrame object."
                 )
+
+            frame.normalize() # To apply gravity
 
             frame = self._apply_gravity(frame)
 
@@ -1979,7 +1981,7 @@ class Platformer:
 
         Another detail is that while launching, the gravity_changed variable
         is reset. Since launching is a stable state for the player, we can allow
-        the player to flip again after a launch.
+        the player to flip again after a launch. We do something similar for teleports.
 
         The display_coords and display_percentage flags are turned off during launching,
         since the coordinates and percentage of the launch point do not represent where
@@ -1999,8 +2001,9 @@ class Platformer:
         self.display_coords = False
         self.display_percentage = False
 
-        # Allows us to chain gravity flips and launches.
+        # Allows us to chain gravity flips and launches / teleports.
         self.gravity_changed = False
+        self.teleported = False
 
         # The radii for the area that the player can launch in
         # (actually, the launch area is a square rather than a circle)
@@ -2096,71 +2099,106 @@ class Platformer:
                     break
 
     @_gravity_affected
-    def _teleport(self, frame):
+    def _teleport(self, coords: C) -> ExecutionFrame:
+
+        """Allows the player to teleport to a different location. In the case that
+        the player is not in a portal, or there are no matching portals,
+        _teleport does nothing. In the case that there is only one portal to map
+        to, the method automatically selects the only choice and returns the
+        new frame.
+
+        Else, the player has to choose between many different possible locations. In this case,
+        the program takes all the possible locations and sorts them by x-position and y-position.
+        Two indices are maintained to make w/a/s/d movement feel natural in a discrete
+        set of points.
+
+        Like in _launch, display_coords and display_percentage are turned off during
+        teleportation, for very similar reasons.
+
+        When the user presses [x] to select a teleport location, an ExecutionFrame object
+        is returned with the new location the user chose. Note that gravity is also
+        applied to the final coordinate."""
 
         self.gravity_changed = False
 
+        # Get coordinates of possible portals to teleport to
         try:
-            possible_coords = self.portals[frame.coords]
-        except KeyError:
-            return ExecutionFrame(AliveCode.ALIVE, frame.coords)
+            possible_coords = self.portals[coords]
+        except KeyError: # No portals to teleport to, exit
+            return ExecutionFrame(AliveCode.ALIVE, coords)
 
         num_found = len(possible_coords)
 
-        if num_found == 1:
-            return ExecutionFrame(AliveCode.ALIVE,
-                                  possible_coords[0].as_normal())
-        else:
+        if num_found == 1: # Only one possible place to teleport
+            return ExecutionFrame(AliveCode.ALIVE, possible_coords[0])
+        else: # Run GUI
+
+            display_coords, display_percentage = self.display_coords, self.display_percentage
+
+            pad = self.renderer.bar_exists
+
+            self.display_coords = False
+            self.display_percentage = False
+
+            # Sort coordinates by x and y. This makes navigating
+            # coordinates more intuitive with w/a/s/d controls.
 
             possible_coords_x = sorted(possible_coords,
                                        key=lambda c: (c.x, c.y))
             possible_coords_y = sorted(possible_coords,
                                        key=lambda c: (c.y, c.x))
 
-            current_map = self.maps.game.copy()
-            current_ind_x = 0
-            current_ind_y = possible_coords_y.index(possible_coords_x[0])
+            original_map = self.maps.game.copy()
 
-            self.hidden = True
+            x_index = 0
+            y_index = possible_coords_y.index(possible_coords_x[x_index])
+
             while True:
 
-                display = current_map.copy()
-                c = possible_coords_x[current_ind_x].as_normal()
+                display = original_map.copy()
 
-                for coord in c.adjs("w", "a", "s", "d", g=self.gravity):
+                portal_coord = possible_coords_x[x_index]
+
+                for coord in portal_coord.adjs("w", "a", "s", "d"):
                     display[coord] = "!"
 
                 clear()
-                self.renderer._render(display)
+                self.renderer.render(game_map=display, header="Teleport!", pad=pad)
 
-                move = IOUtils.input(
-                    "Select where to teleport ([wasd]/[ENTER]). ")
+                j = IOUtils.input("Select where to teleport ([wasd]/[x] to select). ")
 
-                match move:
+                match j:
+
+                    # Note that we use the y-sorted list when navigating
+                    # horizontally, and vice versa.
+                    # This is because the second sort key in lexicographical sort
+                    # is the direction that points head in locally.
+                    # So, in the y-sorted list, locally the coordinates are moving
+                    # in the x-direction, and vice versa.
 
                     case "a" | "d":
 
-                        current_ind_x += 1 if move == "d" else -1
-                        current_ind_x %= num_found
-                        current_ind_y = possible_coords_y.index(
-                            possible_coords_x[current_ind_x])
+                        y_index += 1 if j == "d" else -1
+                        y_index %= num_found
+
+                        x_index = possible_coords_x.index(possible_coords_y[y_index])
+                        x_index %= num_found
 
                     case "w" | "s":
 
-                        current_ind_y += 1 if move == "w" else -1
-                        current_ind_y %= num_found
-                        current_ind_x = possible_coords_x.index(
-                            possible_coords_y[current_ind_y])
+                        x_index += 1 if j == "w" else -1
+                        x_index %= num_found
 
-                    case "":
+                        y_index = possible_coords_y.index(possible_coords_x[x_index])
+                        y_index %= num_found
 
-                        self.maps.both.patch(frame.coords)
+                    case "x":
+
+                        self.display_coords = display_coords
+                        self.display_percentage = display_percentage
+
                         clear()
-                        self.hidden = False
-                        return ExecutionFrame(AliveCode.ALIVE, c)
-
-                current_ind_x %= num_found
-                current_ind_y %= num_found
+                        return ExecutionFrame(AliveCode.ALIVE, portal_coord)
 
     def _new_position(self, move: str):
 
