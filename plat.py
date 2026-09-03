@@ -49,7 +49,6 @@ CHARS = MapCharset("#*LlAnNX<>V^_KkHhx@SF:-|'\"?/\\`()[]{}+=$;.,123456789")
 
 HARD = MapCharset("#*LlAnNX<>V^123456789%")
 NOT_PASSABLE = MapCharset("#*LlAnNX<>V^123456789_%")
-INTERRUPT = MapCharset("x_")
 TRANSPARENT = MapCharset(" :'\"Kk?`()[]{}/\\+=$@SF;.,")
 
 LOCKS = MapCharset("lLAnNX")
@@ -1038,12 +1037,15 @@ class Renderer:
 
             write(header, self.platformer.icon)
 
-    def render(self, game_map: GameMap | None=None, header: str=None):
+    def render(self, game_map: GameMap | None=None, header: str=None, pad: bool=False):
 
-        """Renders the platformer onto the terminal. There are two
-        optional arguments: a custom game map and a custom header.
-        These are used in game to modify the output in different
-        situations.
+        """Renders the platformer onto the terminal. There are three
+        optional arguments: a custom game map, a custom header, and 'pad'.
+        The custom game map and header are used to temporarily modify
+        the GUI of the game, such as when you are launching or teleporting.
+        The 'pad' argument is used in special situations when we temporarily
+        get rid of the information bar on the screen. To keep the screen
+        stable, we instead write a newline.
 
         The GUI for the platformer consists of a header,
         followed by a bar containing the time limit, coordinates,
@@ -1055,6 +1057,8 @@ class Renderer:
 
         if self.bar_exists:
             stdout.write(self.stats_bar + "\n")
+        elif pad: # If the bar is not shown, write a newline.
+            stdout.write("\n")
 
         stdout.flush()
 
@@ -1963,104 +1967,138 @@ class Platformer:
         self.maps.update_locks(self.locks)
 
     @_gravity_affected
-    def _launch(self, coords):
+    def _launch(self, launch_point: C) -> ExecutionFrame:
 
-        self.hidden = True
+        """Allows the player to launch from a given starting point. The player is only
+        able to launch within a radius of 6 characters. They can move their target location
+        using standard [w/a/s/d] controls. Then, the player presses [x] to launch.
+
+        This function uses a copy of the game map to create its own GUI for launch mode. The
+        coordinates that the player selects are always proven to be a valid trajectory,
+        so the display simply traces the trajectory.
+
+        Another detail is that while launching, the gravity_changed variable
+        is reset. Since launching is a stable state for the player, we can allow
+        the player to flip again after a launch.
+
+        The display_coords and display_percentage flags are turned off during launching,
+        since the coordinates and percentage of the launch point do not represent where
+        the player actually is launching. Since this might make the bar disappear,
+        we use the pad argument in Renderer.render to pad the bar.
+
+        Launching is handled cleverly, as this function does not compute the trajectory
+        of the player itself. Instead, it temporarily changes the game's movement parameters
+        and handles the trajectory as a big jump from the launch point. In other words,
+        launches and jumps work in the exact same way."""
+
+        # Save old attribute values, we will temporarily replace them.
+        display_coords, display_percentage = self.display_coords, self.display_percentage
+
+        pad = self.renderer.bar_exists
+
+        self.display_coords = False
+        self.display_percentage = False
+
+        # Allows us to chain gravity flips and launches.
+        self.gravity_changed = False
+
+        # The radii for the area that the player can launch in
+        # (actually, the launch area is a square rather than a circle)
 
         x_radius = 6
         y_radius = 6
 
-        x, y = coords
-        launch_coords = coords.copy()
-
-        # Local display
-        current_map = self.maps.game.copy()
-
-        top_y = self.maps.game.y_len - 1
+        # The maximum indices for x and y.
         top_x = self.maps.game.x_len - 1
+        top_y = self.maps.game.y_len - 1
 
         # Bounds for moving around.
-        lower_x = max(x - x_radius, 0)
-        upper_x = min(x + x_radius, top_x)
+        lower_x = max(launch_point.x - x_radius, 0)
+        upper_x = min(launch_point.x + x_radius, top_x)
 
-        lower_y = min(max(y, 0), top_y)
-        upper_y = max(min(y + self.gravity*y_radius, top_y), 0)
+        lower_y = launch_point.y
+
+        # Clamp (y + self.gravity * y_radius) to a valid y-level.
+        upper_y = max(min(launch_point.y + self.gravity*y_radius, top_y), 0)
 
         if not self.down:
-            lower_y, upper_y = upper_y, lower_y
+            lower_y, upper_y = upper_y, lower_y # We are launching downwards in this case, not upwards
 
-        display = current_map.copy()
-        old_coords = None
+        # The map before launching (used for creating displays)
+        original_map = self.maps.game.copy()
+
+        # The coordinates to launch to
+        target = launch_point.copy()
+
+        INTERRUPT_ARC = TELEPORT | GRAVITY | MapCharset("x$FS")
 
         while True:
 
-            # Switch direction of jumping
-            f = "a" if launch_coords.x < x else "d"
+            # Create display with new coordinates
+            display = original_map.copy()
 
-            prev_display = display
-            display = current_map.copy()
+            for i in C.arc(launch_point, target):
 
-            for i in C.arc(coords, launch_coords):
-
-                if display[i] in HARD:
-                    display = prev_display
-                    launch_coords = old_coords
-                    break
-
-                elif display[i] not in INTERRUPT:
+                # Trace out the player's trajectory.
+                if original_map[i] not in INTERRUPT_ARC:
                     display[i] = "!"
 
-            display[launch_coords] = self.icon
+            display[target] = self.icon
 
             clear()
-            self.renderer._render(display, string="Launch!")
-            old_coords = launch_coords.copy()
+            self.renderer.render(game_map=display, header="Launch!", pad=pad)
 
-            move = IOUtils.input(
-                "Select where to launch ([wasd]/[x] to drop). ")
+            j = IOUtils.input("Select where to launch ([wasd]/[x] to drop). ")
 
-            # Move around.
-            match move:
+            undo_target = target.copy()
+
+            match j:
+
                 case "w":
-                    launch_coords.y += 1
+                    target.y += 1
                 case "s":
-                    launch_coords.y -= 1
+                    target.y -= 1
                 case "a":
-                    launch_coords.x -= 1
+                    target.x -= 1
                 case "d":
-                    launch_coords.x += 1
-                case "x": # Finished
+                    target.x += 1
 
-                    self.hidden = False
+                case "x": # Launch the player by swapping out movement parameters
 
-                    for i in C.arc(coords, launch_coords):
-                        self.maps.both.patch(i)
+                    dx, dy = abs(target - launch_point)
+
+                    old_movement_parameters = self.move
+                    self.move = MovementParameters(dx, dy)
+
+                    launch_move = f"w{'a' if target.x < launch_point.x else 'd'}"
+
+                    frame = self._new_position_helper(launch_move, launch_point)
+
+                    self.move = old_movement_parameters
+
+                    self.display_coords = display_coords
+                    self.display_percentage = display_percentage
 
                     clear()
 
-                    # Works like vector subtraction.
-                    # Note: absolute value works component-wise
-
-                    dx, dy = abs(launch_coords - coords)
-
-                    # Swap game movement parameters for jump.
-                    move = self.move
-                    self.move = MovementParameters(dx, dy)
-                    launch_move = self._new_move(f"w{f}")
-                    frame = self._new_position_helper(launch_move, coords)
-                    self.move = move
-
                     return frame
 
-            # Bound coords
-            launch_coords.x = max(min(launch_coords.x, upper_x), lower_x)
-            launch_coords.y = max(min(launch_coords.y, upper_y), lower_y)
+            # Bound coordinates
+            target.x = max(min(target.x, upper_x), lower_x)
+            target.y = max(min(target.y, upper_y), lower_y)
 
-            if display[launch_coords] in HARD:
-                launch_coords = old_coords
+            # If our new coordinate does not yield a valid trajectory, we revert back to
+            # what we had before.
+
+            for i in C.arc(launch_point, target):
+                if original_map[i] in HARD:
+                    target = undo_target.copy()
+                    break
 
     @_gravity_affected
     def _teleport(self, frame):
+
+        self.gravity_changed = False
 
         try:
             possible_coords = self.portals[frame.coords]
