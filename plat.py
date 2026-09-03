@@ -1445,22 +1445,6 @@ class Platformer:
 
         if self.maps.game[cell] == "x":
             return ExecutionFrame(AliveCode.DEAD, cell)
-        elif self.maps.game[cell] in GRAVITY:
-
-            # We separate the case of a gravity block from
-            # all the other "special" cases covered in
-            # _affected_frame in the next few lines.
-            # Indeed, if we exit early in this case,
-            # _affected_frame gets run in _new_position afterward.
-            # Notably, gravity_changed is never reset, meaning
-            # that gravity only flips once.
-
-            # If we handle this in the next _affected_frame
-            # and do not exit early, the subsequent _affected_frame
-            # does nothing, and gravity_changed is turned to False
-            # again. This allows for double flips, which is a bug.
-
-            return ExecutionFrame(AliveCode.ALIVE, cell)
 
         self._check_item_collection(cell)
 
@@ -1909,8 +1893,8 @@ class Platformer:
         self.maps.update_platforms()
 
         if moved:
-            frame = self._apply_gravity(frame)
             self.gravity_changed = False
+            frame = self._apply_gravity(frame)
 
         frame.normalize()
         return frame
@@ -2170,42 +2154,10 @@ class Platformer:
         """Finds the new position for the player, given their current coordinates
         and the move they made. Firstly, we run _new_position_helper to get
         the initial frame based on the player's current coordinates, running
-        the move they made."""
+        the move they made. We then apply gravity to the frame, finishing the
+        movement arc."""
 
-        # Starting frame
-        new_frame = self._new_position_helper(move, self.frame.coords.copy())
-
-        # Player is dead or has won: return
-        if not new_frame.alive.is_alive():
-            return new_frame
-
-        # Even though _new_position_helper already runs _affected_frame
-        # on the last cell, there is an exception.
-        # In _new_position_helper, gravity portals get rerouted
-        # to be handled properly here. (Read the comment in _enter).
-
-        new_frame, changed = self._affected_frame(new_frame.coords)
-
-        if changed:
-
-            # Prevents gravity_changed from being reset, causing
-            # double flips (a bug).
-
-            return new_frame
-
-        new_frame = self._apply_gravity(new_frame)
-
-        # Player is dead or has won: return
-        if not new_frame.alive.is_alive():
-            return new_frame
-
-        # _apply_gravity always settles the player down to the ground.
-        # Since we have settled the case of double flips, we are able
-        # to flip back gravity_changed safely.
-
-        self.gravity_changed = False
-
-        return new_frame
+        return self._apply_gravity(self._new_position_helper(move, self.frame.coords.copy()))
 
     @_gravity_affected
     def _flip_gravity(self, frame, char: Literal["+", "="]):
