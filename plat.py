@@ -1422,28 +1422,20 @@ class Platformer:
 
             current_chr, chr_below = self.maps.game[new], self.maps.game[below]
 
-            if self.maps.game[new] == "x":
-                return ExecutionFrame(AliveCode.DEAD, new)
-
-            self._check_item_collection(new)
-
-            new_frame, changed = self._affected_frame(new)
-            if changed:
-                return new_frame
+            if (frame := self._enter(new)) is not None:
+                return frame
 
         return ExecutionFrame(AliveCode.ALIVE, new)
 
     def _enter(self, cell: C) -> ExecutionFrame | None:
 
-        """A helper function for _new_position_helper that does everything
-         that needs to be done when a cell is entered in the loop. This includes
-         checking item collection, running _affected_frame to handle special
-         blocks along the way, and marking the player as dead if they run into
-         a spike.
-
-         This function can return either an ExecutionFrame or None. If a
-         frame is returned, this frame is the player's final position for
-         _new_position_helper. Else, _new_position_helper continues."""
+        """This function is the subroutine that runs for every cell the player
+        enters during movement. It checks if the player is in a spike,
+        collecting something, or in a special block, and returns a frame
+        to be passed to the outer function for early exit. Else, it will
+        return None and the outer function will continue as normal.
+        Specifically, this function is used in _apply_gravity and
+        _new_position_helper."""
 
         if self.maps.game[cell] == "x":
             return ExecutionFrame(AliveCode.DEAD, cell)
