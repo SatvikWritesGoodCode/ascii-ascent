@@ -2299,75 +2299,98 @@ class Platformer:
         total_pause_time = pause_end_time - pause_start_time
         self.start_time += total_pause_time
 
-        # Getting back to the game.
         clear()
 
-    def _parse_move(self, a: float, move: str):
+    def _parse_move(self, move: str) -> bool:
 
-        """Parses the user's move, whether it
-        is:
-        - playing the game (moving)
-        - restarting
-        - exiting
-        - pausing
+        """Takes a user's input and parses it. It detects:
+        > restarting, exiting, and pausing the game
+        > printing the description
+        > running the user's move in-game
+
+        In the case that the user inputted a move, the jump
+        counter will also be updated.
+
+        The function returns whether the player exited the game,
+        in which case the function play() will return early.
         """
 
         match IOUtils.sanitized(move):
 
+            case "exit" | "x":
+                return True
+
             case "restart" | "r":
+
                 clear()
                 self._restart()
-                return True
-
-            case "exit" | "x":
-                return self.death_status
 
             case "p" | "pause":
-                clear()
 
-                self._pause(a)
-                return True
+                clear()
+                self._pause()
 
             case "desc" | "e" if (self.desc or self.meta):
 
-                self._pause(a, print_desc=True)
-                return True
+                self._pause(description=True)
 
             case _:
+
                 clear()
                 self.frame = self._progress(move)
                 self.jumps += 1
 
+        return False
+
     def play(self) -> tuple[Status, int]:
 
-        """Plays the Platformer object, and sends out the results
-        if the player wins or loses."""
+        """The main function in the Platformer class, as well as the
+        only public function available for the class. It is also
+        arguably the most important function in the entire program.
+        It runs the Platformer game using the data given during
+        initialization.
+
+        If, during initialization, the level data passed into it
+        was LevelData.NULL, the play() function will immediately
+        exit. Else, it prepares the game before starting the game loop.
+
+        Every iteration of the game loop starts out with printing the
+        map to the console using the Renderer class. If the player
+        is dead or has won, it will display a message and exit the game.
+        Else, the program collects the player's input and parses it
+        (see _parse_move above). If the player types in 'exit' or 'x',
+        the program will exit early.
+        """
+
+        # Allows for an edge case when the user is selecting
+        # a level through a pagination GUI.
+        # If the player exits the GUI, LevelData.NULL is
+        # returned for consistency. When this level is played,
+        # nothing happens.
 
         if self._level_data == LevelData.NULL:
             return self.death_status
 
         self._prepare_game()
 
-        while True: # Game Loop
+        while True: # Main game loop
 
             self.renderer.render()
 
             data = self.checker.get_return_value()
 
-            if data is not None:
+            if isinstance(data, WinCondition):
                 self.renderer.game_over(data)
                 return data.status, data.jumps
 
-            data = self._parse_move(perf_counter(),
-                                    IOUtils.input("-> "))
+            exited = self._parse_move(IOUtils.input("-> "))
 
             # logger.debug(self.title + "\n" + str(self.log_map) + "\n") # `Log
             # self.log_map = self.maps.default.copy() # `Log
 
-            if data is True:
-                continue
-            elif data is not None:
-                return data
+            # Exited the game
+            if exited:
+                return self.death_status
 
 ################################################################################
 
