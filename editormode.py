@@ -197,7 +197,7 @@ class BlockCursorLoc:
         "Main": MapCharseq("SF?#*x_@"),
         "Arrows/Countdown": MapCharseq("<>^V-|123456789"),
         "Transparent": MapCharseq(":'\";,."),
-        "Keys": MapCharseq("lLAnNXKk"),
+        "Keys": MapCharseq("lLAnNXKkHh"),
         "Misc": MapCharseq("()[]{}/\\+=$"),
     }
 

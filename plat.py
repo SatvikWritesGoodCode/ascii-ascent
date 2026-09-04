@@ -667,6 +667,8 @@ class WinDeathChecker:
             coin_str = "Coins [x] "
         elif total == 1:
             coin_str = "Coin [x] "
+        else:
+            coin_str = ""
 
         win_repr += coin_str
 
