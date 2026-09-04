@@ -1480,22 +1480,29 @@ class Platformer:
         # Then, the rest of the movement for these cases
         # comes from horizontal shifting.
 
-        if (
-                len(move) == 2 and
-                "s" in move and
-                self.maps.game._bounded(new.adj("s", self.gravity))
-        ):
+        if len(move) == 2 and "s" in move:
+
+            direction = "a" if "a" in move else "d"
+
             new.y -= self.gravity
 
-            if (frame := self._enter(new)) is not None:
-                return frame
+            if self.maps.game[new] in HARD and self.maps.game[new.adj(direction, self.gravity)] in HARD:
+                return ExecutionFrame(AliveCode.ALIVE, o)
+            elif self.maps.game[new] not in HARD:
+
+                if (frame := self._enter(new)) is not None:
+                    return frame
+
+            # In this case, we are now in the ground, but there
+            # is a transparent block right next to us.
+            # This will be settled in the main match statement.
 
         match move:
 
             case "w": # Upwards movement (by 1 or 2 blocks at most)
 
                 current_chr = self.maps.game[o]
-                chr_above = self.maps.game[C(new.x, new.y + self.gravity)]
+                chr_above = self.maps.game[new.adj("w", self.gravity)]
 
                 # Moving up into a ladder (or in a ladder), move up once and stop.
                 if "_" in {current_chr, chr_above}:
@@ -1517,7 +1524,6 @@ class Platformer:
 
                     new.y += self.gravity
 
-                    # Just added
                     if (frame := self._enter(new)) is not None:
                         return frame
 
@@ -1791,13 +1797,14 @@ class Platformer:
         char_above = self.maps.default[adj("w")]
         char_under = self.maps.game[adj("s")]
         char_dunder = self.maps.game[adj("ss")]
-        char_left = self.maps.game[adj("sa")] # Character to the southwest
-        char_right = self.maps.game[adj("sd")] # Character to the southeast
+        char_left = self.maps.default[adj("a")]
+        char_right = self.maps.default[adj("d")]
+        char_s_left = self.maps.game[adj("sa")] # Character to the southwest
+        char_s_right = self.maps.game[adj("sd")] # Character to the southeast
 
         # A bunch of sets of characters to make comparisons cleaner.
         ARROWS, BELTS = MapCharset("V^<>"), MapCharset("|-")
-        HARD_NO_ARROWS = (HARD - ARROWS) | MapCharset("x")
-        TRANSPARENT_WITH_ARROWS = TRANSPARENT | ARROWS | BELTS | MapCharset("_")
+        HARD_NO_ARROWS = (HARD - ARROWS)
 
         # Down and up arrows relative to gravity
         down_arrow = "V" if self.down else "^"
@@ -1813,9 +1820,15 @@ class Platformer:
             # whether a belt will continue in a given direction or turn around.
 
             case "<":
-                coords.x -= 1 if char_left in HORIZONTAL else -1
+                if char_s_left in HORIZONTAL and char_left not in HARD_NO_ARROWS:
+                    coords.x -= 1
+                elif char_s_left not in HORIZONTAL and char_right not in HARD_NO_ARROWS:
+                    coords.x += 1
             case ">":
-                coords.x += 1 if char_right in HORIZONTAL else -1
+                if char_s_right in HORIZONTAL and char_right not in HARD_NO_ARROWS:
+                    coords.x += 1
+                elif char_s_right not in HORIZONTAL and char_left not in HARD_NO_ARROWS:
+                    coords.x -= 1
             case i if i == down_arrow:
                 coords.y -= self.gravity if char_dunder in VERTICAL else -self.gravity
 
@@ -1855,7 +1868,7 @@ class Platformer:
                     coords.y += self.gravity
                     alive_code = AliveCode.DEAD
 
-                elif char_above in TRANSPARENT_WITH_ARROWS:
+                else:
 
                     # Move up: upper character is not hard.
                     coords.y += self.gravity
@@ -1873,6 +1886,9 @@ class Platformer:
                 # This means the player does not move.
 
                 moved = False
+
+        if self.maps.default[coords] == "x":
+            alive_code = AliveCode.DEAD
 
         return ExecutionFrame(alive_code, coords), moved
 
@@ -2162,86 +2178,49 @@ class Platformer:
     @_gravity_affected
     def _flip_gravity(self, frame, char: Literal["+", "="]):
 
+        """Flips the current gravity and applies gravity in this new direction to a given
+        frame."""
+
         self.down = False if char == "+" else True
         return frame
 
     def _progress_helper(self, move: str) -> ExecutionFrame:
 
-        """Finds the new coordinates after a move, using a current move
-        as well as information from asterisks. It uses algorithms that
-        traces the path of the character while also determining when to
-        stop, updating the player coordinates accordingly.
-
-        It also does much more than this, managing the game state and
-        flow of the program. This function is called every tick, so
-        it is designed for optimization. (Or at least, it is hopefully
-        optimized.) That is why so many caches are used for map updates.
-        """
+        """This function computes the player's position, taking not just into account
+        the move they made (like in _new_position), but the surrounding environment.
+        For example, after the initial new_frame is received from _new_position(),
+        we update the platforms and countdown blocks in the map. We then receive the
+        player's new state after these updates. Whenever the player reaches some
+        state of inertia, like after new_position or _progress_countdown, we also
+        check if there are asterisk blocks underneath the player and add them to
+        stepped_on."""
 
         self.stepped_on.clear()
-        original = self.frame.coords.copy()
 
-        # --- Initial new position ---
+        new_frame = self._new_position(move)
 
-        frame = self._new_position(move)
+        if not new_frame.alive.is_alive():
+            return new_frame
 
-        if not frame.alive.is_alive():
-            return frame
+        # Landed on the ground: populate stepped_on
+        self.stepped_on.populate(self, new_frame)
 
-        # --- Initial new position <end> ---
+        # Map updates: platforms and countdown blocks
 
-        self._check_item_collection(frame.coords)
-        frame, _ = self._affected_frame(frame.coords)
+        new_frame = self._progress_platforms(new_frame)
 
-        self.stepped_on.populate(self, frame)
+        if not new_frame.alive.is_alive():
+            return new_frame
 
-        # --- Map Updates ---
+        new_frame = self._progress_countdown(new_frame)
 
-        frame = self._progress_platforms(frame)
+        if not new_frame.alive.is_alive():
+            return new_frame
 
-        if not frame.alive.is_alive():
-            return frame
+        # Landed on the ground: populate stepped_on
+        self.stepped_on.populate(self, new_frame)
 
-        frame = self._progress_countdown(frame)
-
-        if not frame.alive.is_alive():
-            return frame
-
-        # --- Map Updates <end> ---
-
-        self._check_item_collection(frame.coords)
-        frame, _ = self._affected_frame(frame.coords)
-
-        self.stepped_on.populate(self, frame)
-
-        # --- Some extra conditions ---
-
-        i = self.maps.default[frame.coords]
-
-        match i:
-            case "\\":
-                self.hidden = False
-            case "/":
-                self.hidden = True
-
-        # --- Some extra conditions <end> ---
-
-        # --- Get final frame ---
-
-        match self.maps.game[frame.coords]:
-
-            case i if i in HARD:
-                val = ExecutionFrame(AliveCode.ALIVE, original)
-            case "F":
-                val = ExecutionFrame(AliveCode.WON, frame.coords)
-            case "x":
-                val = ExecutionFrame(AliveCode.DEAD, frame.coords)
-            case _:
-                val = ExecutionFrame(AliveCode.ALIVE, frame.coords)
-
-        # --- Get final frame <end> ---
-
-        return val
+        return new_frame
 
     def _progress(self, move: str) -> ExecutionFrame:
 
