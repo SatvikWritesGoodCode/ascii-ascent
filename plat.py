@@ -2273,24 +2273,31 @@ class Platformer:
 
         self._prepare_game()
 
-    def _pause(self, a: float, *, print_desc=False):
+    def _pause(self, *, description: bool=False):
 
-        """Pauses the game."""
+        """Pauses the game. There is an optional argument
+        description that is used when the player wants
+        to view the level description. Else, it will
+        display the current game map.
+
+        One thing to note is that the level timer stops during
+        pauses. To account for this, we add the time paused
+        to the start time to push the elapsed time back."""
 
         clear()
 
-        desc = self.desc
+        pause_start_time = perf_counter()
 
-        if print_desc:
-
+        if description:
             self.renderer.print_desc()
         else:
-            self.renderer._render(string="[||] PAUSED")
+            self.renderer.render(header="[||] PAUSED")
 
         IOUtils.input("[|>] Resume? ")
-        b = perf_counter()
-        self.start_time += (b - a)
-        self.desc = desc
+
+        pause_end_time = perf_counter()
+        total_pause_time = pause_end_time - pause_start_time
+        self.start_time += total_pause_time
 
         # Getting back to the game.
         clear()
