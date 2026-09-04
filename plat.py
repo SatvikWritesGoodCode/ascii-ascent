@@ -2224,7 +2224,22 @@ class Platformer:
 
         return new_frame
 
+    def _clear_items(self):
+
+        """Clears the asterisks stepped on during the last tick from
+        the map, as well as patching up the player's icon."""
+
+        self.maps.clear_asterisks(self.stepped_on)
+        self.maps.both.patch(self.frame.coords)
+
     def _progress(self, move: str) -> ExecutionFrame:
+
+        """Progresses the state of the game, or moves the game forward one tick.
+        It first starts out with clearing any asterisks that the player has stepped
+        on during the last tick, as well as the player's icon. We retrieve the
+        player's new coordinates from the move they input. We then draw the player
+        at these new coordinates (unless they are hidden). We reset the gravity_changed
+        and teleported attributes, and return the new frame."""
 
         self._clear_items()
 
@@ -2236,18 +2251,7 @@ class Platformer:
         self.gravity_changed = False
         self.teleported = False
 
-        if self._check_item_collection(frame.coords):
-            return ExecutionFrame(AliveCode.WON, frame.coords)
-
         return frame
-
-    def _clear_items(self):
-
-        """Clears the asterisks stepped on during the tick from
-        the map, as well as patching up the player's coordinates."""
-
-        self.maps.clear_asterisks(self.stepped_on)
-        self.maps.both.patch(self.frame.coords)
 
     def _restart(self):
 
