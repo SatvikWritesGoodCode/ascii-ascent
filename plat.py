@@ -2245,22 +2245,33 @@ class Platformer:
 
         return frame
 
+    def _prepare_game(self):
+
+        """A function that sets up the initial state of the game
+        by drawing the player's icon at the starting coordinates,
+        recording the start time and clearing the screen."""
+
+        self.maps.game[self.frame.coords] = self.icon
+        self.start_time = perf_counter()
+        clear()
+
     def _restart(self):
 
-        """Resets all the attributes and game state."""
+        """Restarts the game by resetting all the class attributes
+        to their first state at initialization. This is done by literally
+        calling __init__ again with the initial parameters sent to the class.
+        We also re-prepare the game (see above)."""
 
         self.__init__(self._level_data.copy(),
                       icon=self.icon,
                       debug=self.debug,
                       meta=self.meta,
                       display_desc=self.display_desc,
-                      display_coords=self.display_coords
+                      display_coords=self.display_coords,
+                      display_percentage=self.display_percentage
                       )
 
-        self.start_time = perf_counter()
         self._prepare_game()
-
-        self.maps.clear_asterisks(self.stepped_on)
 
     def _pause(self, a: float, *, print_desc=False):
 
@@ -2319,12 +2330,6 @@ class Platformer:
                 clear()
                 self.frame = self._progress(move)
                 self.jumps += 1
-
-    def _prepare_game(self):
-
-        self.maps.game[self.frame.coords] = self.icon
-        self.start_time = perf_counter()
-        clear()
 
     def play(self) -> tuple[Status, int]:
 
