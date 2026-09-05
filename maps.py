@@ -1884,7 +1884,10 @@ class Map(ABC):
         returns NaC if out of bounds.
         - int: returns the row of all characters at that y-level as
         a list.
-        - slice: slices the map, returns a new Map object."""
+        - two slices [x_slice, y_slice]: returns a new Map
+        object, slicing a rectangular region determined by the
+        x_slice and y_slice.
+        - slice: slices the map vertically, returns a new Map object."""
 
         if isinstance(key, Coordinates):
 
@@ -1899,13 +1902,21 @@ class Map(ABC):
 
             return self.map[key]
 
+        elif isinstance(key, tuple) and len(key) == 2:
+            x_slice, y_slice = key
+
+            if not isinstance(x_slice, slice) or not isinstance(y_slice, slice):
+                raise TypeError("Expected tuple of two slice objects")
+
+            return type(self)([row[x_slice] for row in self.map[y_slice]])
+
         elif isinstance(key, slice):
 
-            return type(self)(self.map[key])
+            return self[:, key]
 
         else:
             raise TypeError(
-                f"{key!r} is not of type Coordinates, int, or slice"
+                f"{key!r} is not of type Coordinates, int, slice, or tuple[slice, slice]"
             )
 
     def enumerate(self) -> Iterator[tuple[C, str]]:
