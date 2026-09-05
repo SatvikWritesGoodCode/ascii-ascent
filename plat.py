@@ -690,6 +690,12 @@ class WinDeathChecker:
         else:
             return self._win_str()
 
+@dataclass(frozen=True, slots=True)
+class Camera:
+
+    x_len: int | None=None
+    y_len: int | None=None
+
 class Renderer:
 
     """A class that handles rendering the game every tick."""
@@ -719,10 +725,6 @@ class Renderer:
     @property
     def level_data(self):
         return self.platformer._level_data
-
-    @property
-    def tower(self):
-        return isinstance(self.platformer, Tower)
 
     @property
     def start(self):
@@ -879,40 +881,72 @@ class Renderer:
         platformer GUI in the terminal, from the top all the way down
         (excluding the input arrow)."""
 
-        y_len = self.platformer.screen_len if self.tower else self.platformer.maps.game.y_len
+        screen_len = self.platformer.SCREEN_LEN
+        y_len = screen_len if screen_len > 0 else self.platformer.maps.game.y_len
 
         map_len = y_len + 2
 
         return map_len + self.text_length + self.bar_exists
 
     @property
-    def screen_slice(self) -> None:
+    def screen_slice_x(self) -> None:
 
-        """Finds the top and bottom y-coordinates to slice the
-        screen for Tower objects, creating a 'camera' that
-        follows the player around. This is done by
-        positioning the player in the middle of the screen.
-        If the bottom, which is 6 below the y coordinate, is less than
-        0, it will default to 0. Similarly, if 6 above y is
-        above the map, it will default to the map maximum.
+        """Based on the CAMERA.x_len class variable, this function
+        creates a slice object that creates a camera effect
+        with the player at the center. Specifically, it creates a
+        slice for the x-axis, bounding it so that the slice does
+        not exceed the bounds of the map. If CAMERA.x_len is
+        None, then an empty slice is returned and the camera does
+        not track along the x-axis.
+        """
 
-        In the case of a regular Platformer and not a Tower
-        object, it returns a regular slice."""
+        x_len = self.platformer.CAMERA.x_len
 
-        if not self.tower:
+        if x_len is None:
+            return slice(None, None, None)
+
+        x = self.platformer.frame.coords.x
+
+        bottom = max(0, x - (x_len // 2))
+
+        top = min(
+            self.platformer.maps.game.x_len - 1,
+            bottom + x_len
+        )
+
+        if top == self.platformer.maps.game.x_len - 1:
+            bottom = top - x_len
+
+        return slice(bottom, top, None)
+
+    @property
+    def screen_slice_y(self) -> None:
+
+        """Based on the CAMERA.y_len class variable, this function
+        creates a slice object that creates a camera effect
+        with the player at the center. Specifically, it creates a
+        slice for the y-axis, bounding it so that the slice does
+        not exceed the bounds of the map. If CAMERA.y_len is
+        None, then an empty slice is returned and the camera does
+        not track along the y-axis.
+        """
+
+        y_len = self.platformer.CAMERA.y_len
+
+        if y_len is None:
             return slice(None, None, None)
 
         y = self.platformer.frame.coords.y
 
-        bottom = max(0, y - (self.platformer.screen_len // 2))
+        bottom = max(0, y - (y_len // 2))
 
         top = min(
             self.platformer.maps.game.y_len - 1,
-            bottom + self.platformer.screen_len
+            bottom + y_len
         )
 
         if top == self.platformer.maps.game.y_len - 1:
-            bottom = top - self.platformer.screen_len
+            bottom = top - y_len
 
         return slice(bottom, top, None)
 
@@ -977,15 +1011,15 @@ class Renderer:
         if game_map is None:
             game_map = self.platformer.maps.game
 
-        screen_slice = self.screen_slice
+        slice_tuple = (self.screen_slice_x, self.screen_slice_y)
 
-        game_map = game_map[screen_slice]
+        game_map = game_map[slice_tuple]
 
         map_str = str(game_map)
 
         if self.platformer.debug != Debug.NONE:
 
-            default_map = self.platformer.maps.default[screen_slice]
+            default_map = self.platformer.maps.default[slice_tuple]
 
             default_str = str(default_map)
 
@@ -1102,6 +1136,8 @@ class Platformer:
     - Settings controlling whether the description,
     coordinates, or percentage are shown above the game map.
     """
+
+    CAMERA = Camera(None, None)
 
     __slots__ = (
 
@@ -2398,24 +2434,11 @@ class Tower(Platformer):
 
     """A class for the final level, which is way taller
     (it's a tower, obviously) and also implements camera
-    tracking the player so it keeps the 63 x 12 screen dimensions.
-    This mode can also be extended to custom-made levels with
-    any height, though it has not been tested."""
+    tracking along the y-axis to keep the 63 x 12 screen
+    dimensions. This mode can be used for any levels that
+    require vertical camera tracking."""
 
-    __slots__ = ("screen_len",)
-
-    def __init__(self, level_data: LevelData, *, icon: str="O",
-                 debug: bool=False, meta: bool=True,
-                 display_desc: bool=True, display_coords: bool=False,
-                 display_percentage: bool=True):
-
-        super().__init__(level_data,
-                         icon=icon, debug=debug, meta=meta, display_desc=display_desc,
-                         display_coords=display_coords,
-                         display_percentage=display_percentage
-                         )
-
-        self.screen_len = Constants.Y_LEN
+    CAMERA = Camera(None, Constants.Y_LEN)
 
 class MapGenerator:
 
