@@ -881,8 +881,8 @@ class Renderer:
         platformer GUI in the terminal, from the top all the way down
         (excluding the input arrow)."""
 
-        screen_len = self.platformer.SCREEN_LEN
-        y_len = screen_len if screen_len > 0 else self.platformer.maps.game.y_len
+        y_len = self.platformer.camera.y_len
+        y_len = self.platformer.maps.game.y_len if y_len is None else y_len
 
         map_len = y_len + 2
 
@@ -910,11 +910,11 @@ class Renderer:
         bottom = max(0, x - (x_len // 2))
 
         top = min(
-            self.platformer.maps.game.x_len - 1,
+            self.platformer.maps.game.x_len,
             bottom + x_len
         )
 
-        if top == self.platformer.maps.game.x_len - 1:
+        if top == self.platformer.maps.game.x_len:
             bottom = top - x_len
 
         return slice(bottom, top, None)
@@ -941,11 +941,11 @@ class Renderer:
         bottom = max(0, y - (y_len // 2))
 
         top = min(
-            self.platformer.maps.game.y_len - 1,
+            self.platformer.maps.game.y_len,
             bottom + y_len
         )
 
-        if top == self.platformer.maps.game.y_len - 1:
+        if top == self.platformer.maps.game.y_len:
             bottom = top - y_len
 
         return slice(bottom, top, None)
@@ -2438,7 +2438,7 @@ class Tower(Platformer):
     dimensions. This mode can be used for any levels that
     require vertical camera tracking."""
 
-    CAMERA = Camera(None, Constants.Y_LEN)
+    CAMERA = Camera(None, None)
 
 class MapGenerator:
 
@@ -2560,8 +2560,8 @@ class MapGenerator:
             start = C(3, 0)
 
         for y in vertical():
-
             coord = C(Constants.X_LEN - 2, y)
+
             if game_map[down(coord)] == "#":
                 game_map[coord] = "F"
                 finish = coord
