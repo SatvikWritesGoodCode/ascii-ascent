@@ -1119,6 +1119,9 @@ class Debug(Enum):
     HORIZONTAL = auto()
     VERTICAL = auto()
 
+    def __bool__(self):
+        return bool(self.value)
+
 class Platformer:
 
     """The main class of the ascii-ascent project. This takes
@@ -2438,19 +2441,236 @@ class Tower(Platformer):
     dimensions. This mode can be used for any levels that
     require vertical camera tracking."""
 
-    CAMERA = Camera(None, None)
+    CAMERA = Camera(None, Constants.Y_LEN)
+
+class Solution:
+
+    """Used in the depth-first search algorithm for evaluating whether
+    a map is possible. Once a path reaches the finish in a level,
+    as the algorithm traces back the path it took, each frame
+    is appended to a Solution object, which acts like a stack.
+    If no path to the finish is found, an empty (falsy)
+    Solution object is returned by the algorithm. See:
+    MapGenerator._is_possible_map.
+
+    In debug mode in MapGenerator, a solution can be 'ran'.
+    This consists of reversing the order of the solution (since
+    the algorithm backtracked and put the frames in reverse order).
+    Then, each frame is presented, and the user can flip through
+    the frames using [ENTER].
+    """
+
+    def __init__(self):
+
+        self.frames = []
+
+    def append(self, game_map: GameMap):
+
+        """Appends a frame (in the form of a GameMap object)
+        to the front of the stack."""
+
+        self.frames.append(game_map)
+
+    def __bool__(self):
+
+        """Returns whether the stack is not empty."""
+
+        return bool(self.frames)
+
+    def run(self):
+
+        """Presents each frame in reversed order, from the starting
+        point to the finish point."""
+
+        for i in reversed(self.frames):
+
+            clear()
+            stdout.write(str(i))
+            IOUtils.input("Press [ENTER] to continue: ")
+
+        clear()
+
+@dataclass(slots=True)
+class GenerationParameters:
+
+    stretch: float=1
+    spikes: int=8
+    mode: Literal[1, 2]=1
+    asterisks: int=1
+
+    def __iter__(self):
+
+        return iter(astuple(self))
+
+    @classmethod
+    def from_mode(cls, mode: Literal[1, 2]):
+
+        if mode == 1:
+            return cls(1, 8, 1, 0)
+        elif mode == 2:
+            return cls(1, 8, 2, 10)
+
+    @property
+    def level(self):
+        return int((self.stretch - 1) * 10) + 1
+
+    def __next__(self):
+
+        stretch = self.stretch + 0.1
+        spikes = min(self.spikes + 1, Constants.X_LEN // 2)
+
+        if self.mode == 2:
+            asterisks = min(self.asterisks + 1, Constants.X_LEN // 2)
+        else:
+            asterisks = self.asterisks
+
+        return type(self)(stretch, spikes, self.mode, asterisks)
+
+class _MapGenerator:
+
+    """Creates a (not necessarily possible) map using
+    generation parameters."""
+
+    def __init__(
+            self,
+            parameters: GenerationParameters,
+            x_len: int=Constants.X_LEN,
+            y_len: int=Constants.Y_LEN
+    ):
+
+        self.parameters = parameters
+
+        self.x_len = x_len
+        self.y_len = y_len
+
+    def create_ground(self):
+
+        game_map = GameMap.solid(" ", length=self.x_len, width=self.y_len)
+
+        y_level = 4
+        noise_gen = PerlinNoise()
+
+        for x in range(self.x_len):
+
+            noise_value = noise_gen.noise(x + random(), y_level + random())
+            height = int(y_level + (val * self.parameters.stretch))
+
+            for y in range(height):
+                game_map[C(x, y)] = "#"
+
+        return game_map
+
+    def generate(self):
+
+        """Creates a map based on parameters that may or may
+        not be impossible. It uses Perlin Noise along a line
+        to get smooth, continuous up and downs. These values
+        are then augmented and plotted on the map relative
+        to the line y=4. The ground is filled below, and
+        spikes/asterisks may be added on top."""
+
+        game_map = self.create_ground()
+
+        def check_seq(lst, i, length=4) -> bool:
+
+            val = lst[i]
+            seq = True
+
+            for j in range(1, length):
+                if lst[i+j] != val + j:
+                    seq = False
+
+            return seq
+
+        def vertical():
+            return range(Constants.Y_LEN - 1, 0, -1)
+
+        def down(coord):
+
+            return coord.adj("s", 1)
+
+        while True:
+            spike_indices = sorted(sample(range(Constants.X_LEN), k=self.e.spikes))
+            for i in range(self.e.spikes - 3):
+                if check_seq(spike_indices, i):
+                    continue
+            break
+
+        for x in spike_indices:
+            if x not in {3, Constants.X_LEN - 2}:
+                for y in vertical():
+                    coord = C(x, y)
+
+                    if game_map[down(coord)] == "#":
+                        game_map[coord] = "x"
+                        break
+
+        if self.e.mode == 2:
+            ast_indices = sample(range(Constants.X_LEN), k=self.e.asterisks)
+            for x in ast_indices:
+                if x not in {3, Constants.X_LEN - 2}:
+                    for y in vertical():
+                        coord = C(x, y)
+
+                        if game_map[down(coord)] in MapCharset("#x"):
+                            game_map[coord] = "*"
+                            break
+
+        for y in vertical():
+            coord = C(3, y)
+
+            if game_map[down(coord)] == "#":
+                game_map[coord] = "S"
+                start = coord
+                break
+
+        else:
+            start = C(3, 0)
+
+        for y in vertical():
+            coord = C(Constants.X_LEN - 2, y)
+
+            if game_map[down(coord)] == "#":
+                game_map[coord] = "F"
+                finish = coord
+                break
+        else:
+            finish = C(Constants.X_LEN - 2, 0)
+
+        return game_map.copy(), start, finish
+
+
 
 class MapGenerator:
 
-    __slots__ = ("e", "total_iterations", "new_data", "frames", "debug",
-                 "_POSSIBLE_MOVES")
+    """A class that creates a random map using generation parameters,
+    and then verifies that the map is possible using a depth-first
+    search algorithm. The main method, generate_map, creates
+    maps and tests them until it finds a possible map.
 
-    def __init__(self, endless: Endless, debug=False):
+    In order to verify maps, MapGenerator uses an Endless object
+    to play moves. This means that the Endless object has two
+    distinct lifetimes: MapGenerator using it to verify whether
+    a level is possible, and the player playing the level.
+    To cleanly separate these two lifetimes, MapGenerator
+    is built as a context manager that sets up the Endless
+    object for the computer to play and cleans up afterward."""
+
+    __slots__ = (
+        "e",
+        "debug",
+        "_POSSIBLE_MOVES"
+    )
+
+    def __init__(self, endless: Endless, debug: bool=False):
+
+        """The attribute self.e is used to refer to the original
+        Endless object that is being used to test out the map.
+        This object also contains the generation parameters.
+        Once a map with a solution is generated, if debug is set to
+        True, the frames in the solution will play out."""
 
         self.e = endless
-        self.total_iterations = 0
-        self.new_data = None
-        self.frames = []
         self.debug = debug
 
         self._POSSIBLE_MOVES = [
@@ -2464,8 +2684,7 @@ class MapGenerator:
             "a'",
             "w",
             "sa",
-            "a",
-
+            "a"
         ]
 
         if self.e.mode == 1:
@@ -2592,19 +2811,15 @@ class MapGenerator:
 
         frame = self._new_frame(move, coords)
 
-        if (frame.alive == AliveCode.DEAD
-                or self.e.maps.default[frame.coords] == "x"):
+        if frame.alive == AliveCode.DEAD:
             return ExecutionFrame(AliveCode.DEAD, frame.coords.as_frozen())
 
-        elif self.e.maps.default[frame.coords] in HARD:
-            return ExecutionFrame(AliveCode.ALIVE, coords)
-
-        frame.coords = frame.coords.as_frozen()
+        frame.freeze()
 
         return frame
 
     def _is_possible_map(self, game_map, current, finish,
-                         visited=None):
+                         visited: set[C] | None=None, solution: Solution | None=None):
 
         """Recursive function to determine if a function is
         possible. Starting from start, it plays all combinations
@@ -2612,6 +2827,8 @@ class MapGenerator:
 
         if visited is None:
             visited = set([current.as_frozen()])
+        if solution is None:
+            solution = Solution()
 
         for move in self._POSSIBLE_MOVES:
             frame = self._is_valid_move(move, current)
@@ -2625,30 +2842,27 @@ class MapGenerator:
             elif f == finish.as_frozen():
 
                 # Reached finish, terminate search.
+                frame = game_map.copy()
+                frame[current] = self.e.icon
+                solution.append(frame)
 
-                if self.debug:
-                    frame = game_map.copy()
-                    frame[current] = self.e.icon
-                    self.frames.append(frame)
-
-                return True
+                return solution
 
             else:
 
                 visited.add(f)
                 new_result = self._is_possible_map(game_map, frame.coords,
-                                                   finish, visited)
+                                                   finish, visited, solution)
 
-                if new_result is True: # Reached finish later in recursion.
+                if new_result: # Reached finish later in recursion.
 
-                    if self.debug:
-                        frame = game_map.copy()
-                        frame[current] = self.e.icon
-                        self.frames.append(frame)
+                    frame = game_map.copy()
+                    frame[current] = self.e.icon
+                    solution.append(frame)
 
-                    return True
+                    return solution
 
-        return False
+        return Solution() # Empty solution, map is not possible
 
     def _level_data_from_map(self, new_map: GameMap):
 
@@ -2660,47 +2874,42 @@ class MapGenerator:
             info=MemoryEfficientInfoMsgs()
         )
 
-    def generate_map(self, speed=0.5):
+    def generate_map(self):
 
         """Generates a possible map and returns the map."""
 
+        total_iterations = 0
+
+        # total_iterations mod 500
         local_iterations = 0
+
         while True:
 
-            self.frames.clear()
-
+            total_iterations += 1
             local_iterations += 1
-            self.total_iterations += 1
 
             data = self._generate_rough_map()
 
             new_map, self.e.frame.coords, *_ = data
 
             self._populate_attrs_with_map(new_map)
-            possible = self._is_possible_map(*data)
 
-            if possible:
+            solution = self._is_possible_map(*data)
+
+            if solution:
 
                 if self.debug:
-                    self.frames = reversed(self.frames)
-
-                    for i in self.frames:
-                        clear()
-                        stdout.write(str(i))
-                        sleep(speed)
-
-                    clear()
+                    solution.run()
 
                 new_data = self._level_data_from_map(new_map)
-                self.new_data = new_data
 
                 return new_data
 
-            if self.total_iterations == 1_000:
+            if total_iterations == 1_000:
                 stdout.write(
                     "Hang on tight! We're working on getting the map for you!\n")
 
-            if local_iterations >= 500:
+            if local_iterations == 500:
                 local_iterations = 0
                 self.e.parameters.stretch -= 0.1 # Make generation easier
 
@@ -2728,9 +2937,6 @@ class MapGenerator:
 
     def __exit__(self, exc_type, exc_value, traceback):
 
-        if self.new_data is None:
-            raise Exception("Map generation failed")
-
         for attr in Platformer.__slots__:
 
             try:
@@ -2738,64 +2944,35 @@ class MapGenerator:
             except AttributeError:
                 continue
 
-@dataclass(slots=True)
-class GenerationParameters:
+class MapValidator:
 
-    stretch: float=1
-    spikes: int=8
-    mode: Literal[1, 2]=1
-    asterisks: int=1
-
-    def __iter__(self):
-
-        return iter(astuple(self))
-
-    @classmethod
-    def from_mode(cls, mode: Literal[1, 2]):
-
-        if mode == 1:
-            return cls(1, 8, 1, 0)
-        elif mode == 2:
-            return cls(1, 8, 2, 10)
-
-    @property
-    def level(self):
-        return int((self.stretch - 1) * 10) + 1
-
-    def __next__(self):
-
-        stretch = self.stretch + 0.1
-        spikes = min(self.spikes + 1, Constants.X_LEN // 2)
-
-        if self.mode == 2:
-            asterisks = min(self.asterisks + 1, Constants.X_LEN // 2)
-        else:
-            asterisks = self.asterisks
-
-        return type(self)(stretch, spikes, self.mode, asterisks)
+    ...
 
 class Endless(Platformer):
 
     __slots__ = (
         "parameters",
+        "debug_speed"
     )
 
     def __init__(self,
                  parameters: GenerationParameters, *,
-                 icon: str="O", debug: bool=False, _level_data: bool=None,
-                 display_coords: bool=False, display_percentage: bool=True):
+                 icon: str="O", debug: Debug=Debug.NONE,
+                 _level_data: bool=None, display_coords: bool=False,
+                 display_percentage: bool=True
+                 ):
 
         self.parameters = parameters
 
         self.icon = icon
-        self.debug = debug
+        self.debug_speed = debug_speed
         self.display_coords = display_coords
         self.display_percentage = display_percentage
 
         if _level_data is None:
 
-            with MapGenerator(self, debug=False) as gen:
-                data = gen.generate_map(speed=0.15)
+            with MapGenerator(self, debug=bool(debug)) as gen:
+                data = gen.generate_map()
 
         else:
             data = _level_data.copy()
